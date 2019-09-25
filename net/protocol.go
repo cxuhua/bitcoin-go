@@ -75,8 +75,23 @@ type MessageHeader struct {
 	CheckSum   []byte
 }
 
+func WriteMsg(w io.Writer, m MsgIO) error {
+	b, err := ToMessageBytes(m)
+	if err != nil {
+		return err
+	}
+	num, err := w.Write(b)
+	if err != nil {
+		return err
+	}
+	if num != len(b) {
+		return SizeError
+	}
+	return nil
+}
+
 //read package
-func FromMessageBytes(r io.Reader) (h *MessageHeader, pr io.Reader, err error) {
+func ReadMsg(r io.Reader) (h *MessageHeader, pr io.Reader, err error) {
 	defer func() {
 		if rerr := recover(); rerr != nil {
 			pr = nil
@@ -243,13 +258,13 @@ func (m *MessageHeader) Read(r io.Reader) {
 	ReadBytes(r, m.Start)
 	cmd := make([]byte, NMT_COMMAND_SIZE)
 	ReadBytes(r, cmd)
-	m.Command = string(cmd)
+	m.Command = util.String(cmd)
 	m.PayloadLen = ReadUint32(r)
 	m.CheckSum = []byte{0, 0, 0, 0}
 	ReadBytes(r, m.CheckSum)
 }
 
-func (m MessageHeader) Write(w io.Writer) {
+func (m *MessageHeader) Write(w io.Writer) {
 	// 4 start
 	WriteBytes(w, m.Start)
 	//12 command
@@ -270,8 +285,8 @@ type Address struct {
 	Port    uint16
 }
 
-func NewAddress(s uint64, ip string, port uint16) Address {
-	return Address{
+func NewAddress(s uint64, ip string, port uint16) *Address {
+	return &Address{
 		Service: s,
 		IpAddr:  net.ParseIP(ip),
 		Port:    port,
@@ -285,7 +300,7 @@ func (a *Address) Read(r io.Reader) {
 	a.Port = ReadUint16(r)
 }
 
-func (a Address) Write(w io.Writer) {
+func (a *Address) Write(w io.Writer) {
 	WriteUint64(w, a.Service)
 	WriteBytes(w, a.IpAddr[:])
 	WriteUint16(w, a.Port)
@@ -296,19 +311,21 @@ type MsgVersion struct {
 	Ver       uint32 //PROTOCOL_VERSION
 	Service   uint64 //1
 	Timestamp uint64
-	SAddr     Address
-	DAddr     Address
+	SAddr     *Address
+	DAddr     *Address
 	Nonce     uint64
 	SubVer    string
 	Height    uint32
 	Relay     uint8
 }
 
-func (m MsgVersion) Command() string {
+func (m *MsgVersion) Command() string {
 	return NMT_VERSION
 }
 
 func (m *MsgVersion) Read(r io.Reader) {
+	m.SAddr = NewAddress(0, "0.0.0.0", 0)
+	m.DAddr = NewAddress(0, "0.0.0.0", 0)
 	m.Ver = ReadUint32(r)
 	m.Service = ReadUint64(r)
 	m.Timestamp = ReadUint64(r)
@@ -320,7 +337,7 @@ func (m *MsgVersion) Read(r io.Reader) {
 	m.Relay = ReadUint8(r)
 }
 
-func (m MsgVersion) Write(w io.Writer) {
+func (m *MsgVersion) Write(w io.Writer) {
 	WriteUint32(w, m.Ver)
 	WriteUint64(w, m.Service)
 	WriteUint64(w, m.Timestamp)

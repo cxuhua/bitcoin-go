@@ -1,7 +1,10 @@
 package main
 
-import "log"
+import (
+	"bitcoin/net"
+	"context"
+)
 
 func main() {
-	log.Println("hello bitcoin")
+	net.StartLookUp(context.Background())
 }
