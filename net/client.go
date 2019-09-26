@@ -119,23 +119,25 @@ func (c *Client) OnConnected() {
 	}
 }
 
+func (c *Client) stop() {
+	err := recover()
+	if err == nil {
+		err = c.ctx.Err()
+	} else {
+		err = fmt.Errorf("err = %v , ctx err = %v", err, c.ctx.Err())
+	}
+	if err != nil {
+		log.Println("client run finished ", err)
+	}
+	if c.connected {
+		c.Close()
+		c.connected = false
+	}
+	c.OnClosed()
+}
+
 func (c *Client) run() {
-	//defer func() {
-	//	err := recover()
-	//	if err == nil {
-	//		err = c.ctx.Err()
-	//	} else {
-	//		err = fmt.Errorf("err = %v , ctx err = %v", err, c.ctx.Err())
-	//	}
-	//	if err != nil {
-	//		log.Println("client run finished ", err)
-	//	}
-	//	if c.connected {
-	//		c.Close()
-	//		c.connected = false
-	//	}
-	//	c.OnClosed()
-	//}()
+	//defer c.stop()
 	for !c.connected {
 		err := c.Connect()
 		if err != nil {
