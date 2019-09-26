@@ -20,6 +20,22 @@ type SeedMap struct {
 	mutex sync.Mutex
 }
 
+func (s *SeedMap) SetConnected(ip string, pv bool) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if v, b := s.nodes[ip]; b {
+		v.Connected = pv
+	}
+}
+
+func (s *SeedMap) SetPing(ip string, pv int) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	if v, b := s.nodes[ip]; b {
+		v.Ping = pv
+	}
+}
+
 func (s *SeedMap) Add(ip string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -31,6 +47,12 @@ func (s *SeedMap) Add(ip string) {
 		Ping:      0,
 		Connected: false,
 	}
+}
+
+func (s *SeedMap) Remove(ip string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	delete(s.nodes, ip)
 }
 
 var (
