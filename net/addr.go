@@ -15,12 +15,12 @@ func (m *MsgSendCmpct) Command() string {
 
 func (m *MsgSendCmpct) Read(h *MessageHeader, r io.Reader) {
 	m.Inter = ReadUint8(r)
-	m.Ver = ReadUint64(r)
+	m.Ver = ReadUInt64(r)
 }
 
 func (m *MsgSendCmpct) Write(h *MessageHeader, w io.Writer) {
 	WriteUint8(w, m.Inter)
-	WriteUint64(w, m.Ver)
+	WriteUInt64(w, m.Ver)
 }
 
 func NewMsgSendCmpct() *MsgSendCmpct {
@@ -38,11 +38,11 @@ func (m *MsgFeeFilter) Command() string {
 }
 
 func (m *MsgFeeFilter) Read(h *MessageHeader, r io.Reader) {
-	m.FeeRate = ReadUint64(r)
+	m.FeeRate = ReadUInt64(r)
 }
 
 func (m *MsgFeeFilter) Write(h *MessageHeader, w io.Writer) {
-	WriteUint64(w, m.FeeRate)
+	WriteUInt64(w, m.FeeRate)
 }
 
 func NewMsgFeeFilter() *MsgFeeFilter {

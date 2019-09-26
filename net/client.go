@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bitcoin/util"
 	"context"
 	"fmt"
 	"log"
@@ -21,7 +22,7 @@ type Client struct {
 	WC        chan MsgIO
 	RC        chan *NetMessage
 	IP        net.IP
-	Port      int
+	Port      uint16
 	connected bool
 	try       int
 	ptimer    *time.Timer
@@ -215,7 +216,8 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-func NewClient(typ int, ip net.IP, port int) *Client {
+func NewClient(typ int, addr string) *Client {
+	ip, port := util.ParseAddr(addr)
 	c := &Client{}
 	c.connected = false
 	c.IP = ip

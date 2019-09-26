@@ -192,7 +192,7 @@ func (m *MessageHeader) Read(r io.Reader) {
 	cmd := make([]byte, NMT_COMMAND_SIZE)
 	ReadBytes(r, cmd)
 	m.Command = util.String(cmd)
-	m.PayloadLen = ReadUint32(r)
+	m.PayloadLen = ReadUInt32(r)
 	m.CheckSum = []byte{0, 0, 0, 0}
 	ReadBytes(r, m.CheckSum)
 }
@@ -205,7 +205,7 @@ func (m *MessageHeader) Write(w io.Writer) {
 	copy(cmd, []byte(m.Command))
 	WriteBytes(w, cmd)
 	//payload size
-	WriteUint32(w, m.PayloadLen)
+	WriteUInt32(w, m.PayloadLen)
 	//checksum
 	WriteBytes(w, m.CheckSum)
 }
@@ -232,21 +232,21 @@ func NewAddress(s uint64, addr string) *Address {
 
 func (a *Address) Read(pt bool, r io.Reader) {
 	if pt {
-		a.Time = ReadUint32(r)
+		a.Time = ReadUInt32(r)
 	}
-	a.Service = ReadUint64(r)
+	a.Service = ReadUInt64(r)
 	a.IpAddr = make([]byte, net.IPv6len)
 	ReadBytes(r, a.IpAddr)
-	a.Port = ReadUint16(r)
+	a.Port = ReadUInt16(r)
 }
 
 func (a *Address) Write(pt bool, w io.Writer) {
 	if pt {
-		WriteUint32(w, a.Time)
+		WriteUInt32(w, a.Time)
 	}
-	WriteUint64(w, a.Service)
+	WriteUInt64(w, a.Service)
 	WriteBytes(w, a.IpAddr[:])
-	WriteUint16(w, a.Port)
+	WriteUInt16(w, a.Port)
 }
 
 //version payload
@@ -269,15 +269,15 @@ func (m *MsgVersion) Command() string {
 func (m *MsgVersion) Read(h *MessageHeader, r io.Reader) {
 	m.SAddr = NewAddress(0, "0.0.0.0:0")
 	m.DAddr = NewAddress(0, "0.0.0.0:0")
-	m.Ver = ReadUint32(r)
-	m.Service = ReadUint64(r)
-	m.Timestamp = ReadUint64(r)
+	m.Ver = ReadUInt32(r)
+	m.Service = ReadUInt64(r)
+	m.Timestamp = ReadUInt64(r)
 	m.SAddr.Read(false, r)
 	if m.Ver >= 106 {
 		m.DAddr.Read(false, r)
-		m.Nonce = ReadUint64(r)
+		m.Nonce = ReadUInt64(r)
 		m.SubVer = ReadString(r)
-		m.Height = ReadUint32(r)
+		m.Height = ReadUInt32(r)
 	}
 	if m.Ver >= 70001 {
 		m.Relay = ReadUint8(r)
@@ -285,15 +285,15 @@ func (m *MsgVersion) Read(h *MessageHeader, r io.Reader) {
 }
 
 func (m *MsgVersion) Write(h *MessageHeader, w io.Writer) {
-	WriteUint32(w, m.Ver)
-	WriteUint64(w, m.Service)
-	WriteUint64(w, m.Timestamp)
+	WriteUInt32(w, m.Ver)
+	WriteUInt64(w, m.Service)
+	WriteUInt64(w, m.Timestamp)
 	m.SAddr.Write(false, w)
 	if m.Ver >= 106 {
 		m.DAddr.Write(false, w)
-		WriteUint64(w, m.Nonce)
+		WriteUInt64(w, m.Nonce)
 		WriteString(w, m.SubVer)
-		WriteUint32(w, m.Height)
+		WriteUInt32(w, m.Height)
 	}
 	if m.Ver >= 70001 {
 		WriteUint8(w, m.Relay)
@@ -325,11 +325,11 @@ func (m *MsgPong) Command() string {
 }
 
 func (m *MsgPong) Read(h *MessageHeader, r io.Reader) {
-	m.Timestamp = ReadUint64(r)
+	m.Timestamp = ReadUInt64(r)
 }
 
 func (m *MsgPong) Write(h *MessageHeader, w io.Writer) {
-	WriteUint64(w, m.Timestamp)
+	WriteUInt64(w, m.Timestamp)
 }
 
 func (m *MsgPong) Ping() int {
@@ -351,11 +351,11 @@ func (m *MsgPing) Command() string {
 }
 
 func (m *MsgPing) Read(h *MessageHeader, r io.Reader) {
-	m.Timestamp = ReadUint64(r)
+	m.Timestamp = ReadUInt64(r)
 }
 
 func (m *MsgPing) Write(h *MessageHeader, w io.Writer) {
-	WriteUint64(w, m.Timestamp)
+	WriteUInt64(w, m.Timestamp)
 }
 
 func NewMsgPing() *MsgPing {
