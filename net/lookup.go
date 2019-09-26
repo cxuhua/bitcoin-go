@@ -81,6 +81,12 @@ func runlookup(conf *config.Config) {
 
 func runcheckip(conf *config.Config) {
 	for _, v := range nodes.nodes {
+		c, err := net.DialTimeout("tcp4", v.Ip.String()+":8333", time.Second)
+		if err != nil {
+			log.Println("connect", v.Ip, err)
+			continue
+		}
+		c.Close()
 		log.Println(v.Ip)
 	}
 }

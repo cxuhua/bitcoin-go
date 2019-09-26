@@ -3,7 +3,27 @@ package util
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"net"
+	"strconv"
+	"strings"
 )
+
+func ParseAddr(addr string) (net.IP, uint16) {
+	ip := net.IP{}
+	port := uint16(0)
+	vs := strings.Split(addr, ":")
+	if len(vs) > 0 {
+		ip = net.ParseIP(vs[0])
+	}
+	if len(vs) > 1 {
+		iv, err := strconv.ParseInt(vs[1], 10, 32)
+		if err != nil {
+			panic(err)
+		}
+		port = uint16((iv))
+	}
+	return ip, port
+}
 
 func RandUInt64() uint64 {
 	v := uint64(0)
