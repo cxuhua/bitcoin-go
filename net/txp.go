@@ -1,13 +1,26 @@
 package net
 
 import (
+	"bitcoin/script"
 	"encoding/hex"
 	"io"
-	"log"
 	"strings"
 )
 
 type BHash [32]byte
+
+func NewBHashWithString(s string) BHash {
+	b := BHash{}
+	if len(s) != len(b)*2 {
+		panic(SizeError)
+	}
+	v, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	copy(b[:], v)
+	return b
+}
 
 type Inventory struct {
 	Type uint32
@@ -31,7 +44,7 @@ func (h BHash) String() string {
 type BHeader struct {
 	Ver       uint32
 	Prev      BHash
-	Root      BHash
+	Root      BHash //Merkle tree root
 	Timestamp uint32
 	Bits      uint32
 	Nonce     uint32
@@ -45,7 +58,7 @@ func (m *BHeader) Read(r io.Reader) {
 	m.Timestamp = ReadUInt32(r)
 	m.Bits = ReadUInt32(r)
 	m.Nonce = ReadUInt32(r)
-	m.Count = ReadVarInt(r)
+	m.Count, _ = ReadVarInt(r)
 }
 
 func (m *BHeader) Write(w io.Writer) {
@@ -73,44 +86,36 @@ func (m *TxOutPoint) Write(w io.Writer) {
 	WriteUInt32(w, m.Index)
 }
 
-type Script []byte
-
 type TxOut struct {
 	Value  uint64
-	Script Script
+	Script *script.Script
 }
 
 func (m *TxOut) Read(r io.Reader) {
 	m.Value = ReadUInt64(r)
-	l := ReadVarInt(r)
-	m.Script = make(Script, l)
-	ReadBytes(r, m.Script)
+	m.Script = ReadScript(r)
 }
 
 func (m *TxOut) Write(w io.Writer) {
 	WriteUInt64(w, m.Value)
-	WriteVarInt(w, uint64(len(m.Script)))
-	WriteBytes(w, m.Script)
+	WriteScript(w, m.Script)
 }
 
 type TxIn struct {
 	Output   TxOutPoint
-	Script   Script
+	Script   *script.Script
 	Sequence uint32
 }
 
 func (m *TxIn) Read(r io.Reader) {
 	m.Output.Read(r)
-	l := ReadVarInt(r)
-	m.Script = make(Script, l)
-	ReadBytes(r, m.Script)
+	m.Script = ReadScript(r)
 	m.Sequence = ReadUInt32(r)
 }
 
 func (m *TxIn) Write(w io.Writer) {
 	m.Output.Write(w)
-	WriteVarInt(w, uint64(len(m.Script)))
-	WriteBytes(w, m.Script)
+	WriteScript(w, m.Script)
 	WriteUInt32(w, m.Sequence)
 }
 
@@ -123,14 +128,14 @@ type TX struct {
 
 func (m *TX) Read(r io.Reader) {
 	m.Ver = ReadUInt32(r)
-	il := ReadVarInt(r)
+	il, _ := ReadVarInt(r)
 	m.Ins = make([]*TxIn, il)
 	for i, _ := range m.Ins {
 		v := &TxIn{}
 		v.Read(r)
 		m.Ins[i] = v
 	}
-	ol := ReadVarInt(r)
+	ol, _ := ReadVarInt(r)
 	m.Outs = make([]*TxOut, ol)
 	for i, _ := range m.Outs {
 		v := &TxOut{}
@@ -154,11 +159,108 @@ func (m *TX) Write(w io.Writer) {
 }
 
 //
+type MsgHeaders struct {
+	Headers []*BHeader
+}
+
+func (m *MsgHeaders) Command() string {
+	return NMT_HEADERS
+}
+
+func (m *MsgHeaders) Read(h *MessageHeader, r io.Reader) {
+	num, _ := ReadVarInt(r)
+	m.Headers = make([]*BHeader, num)
+	for i, _ := range m.Headers {
+		v := &BHeader{}
+		v.Read(r)
+		m.Headers[i] = v
+	}
+}
+
+func (m *MsgHeaders) Write(h *MessageHeader, w io.Writer) {
+	WriteVarInt(w, uint64(len(m.Headers)))
+	for _, v := range m.Headers {
+		v.Write(w)
+	}
+}
+
+func NewMsgHeaders() *MsgHeaders {
+	return &MsgHeaders{}
+}
+
+//
+type MsgGetBlocks struct {
+	Ver    uint32
+	Blocks []*BHash
+	Stop   *BHash
+}
+
+func (m *MsgGetBlocks) Command() string {
+	return NMT_GETBLOCKS
+}
+
+func (m *MsgGetBlocks) Read(h *MessageHeader, r io.Reader) {
+	m.Ver = ReadUInt32(r)
+	num, _ := ReadVarInt(r)
+	m.Blocks = make([]*BHash, num)
+	for i, _ := range m.Blocks {
+		m.Blocks[i] = &BHash{}
+		ReadBytes(r, m.Blocks[i][:])
+	}
+	m.Stop = &BHash{}
+	ReadBytes(r, m.Stop[:])
+}
+
+func (m *MsgGetBlocks) Write(h *MessageHeader, w io.Writer) {
+	WriteUInt32(w, m.Ver)
+	WriteVarInt(w, uint64(len(m.Blocks)))
+	for _, v := range m.Blocks {
+		WriteBytes(w, v[:])
+	}
+	WriteBytes(w, m.Stop[:])
+}
+
+func NewMsgGetBlocks() *MsgGetBlocks {
+	return &MsgGetBlocks{}
+}
+
+//
+
+type MsgNotFound struct {
+	Invs []*Inventory
+}
+
+func (m *MsgNotFound) Command() string {
+	return NMT_NOTFOUND
+}
+
+func (m *MsgNotFound) Read(h *MessageHeader, r io.Reader) {
+	size, _ := ReadVarInt(r)
+	m.Invs = make([]*Inventory, size)
+	for i, _ := range m.Invs {
+		v := &Inventory{}
+		v.Read(r)
+		m.Invs[i] = v
+	}
+}
+
+func (m *MsgNotFound) Write(h *MessageHeader, w io.Writer) {
+	WriteVarInt(w, uint64(len(m.Invs)))
+	for _, v := range m.Invs {
+		v.Write(w)
+	}
+}
+
+func NewMsgNotFound() *MsgNotFound {
+	return &MsgNotFound{}
+}
+
+//
 
 type MsgBlock struct {
 	Ver       uint32
 	Prev      BHash
-	Root      BHash
+	Root      BHash //Merkle tree root
 	Timestamp uint32
 	Bits      uint32
 	Nonce     uint32
@@ -173,11 +275,10 @@ func (m *MsgBlock) Read(h *MessageHeader, r io.Reader) {
 	m.Ver = ReadUInt32(r)
 	ReadBytes(r, m.Prev[:])
 	ReadBytes(r, m.Root[:])
-	log.Println(m.Prev, m.Root)
 	m.Timestamp = ReadUInt32(r)
 	m.Bits = ReadUInt32(r)
 	m.Nonce = ReadUInt32(r)
-	l := ReadVarInt(r)
+	l, _ := ReadVarInt(r)
 	m.Txs = make([]*TX, l)
 	for i, _ := range m.Txs {
 		v := &TX{}
@@ -187,7 +288,16 @@ func (m *MsgBlock) Read(h *MessageHeader, r io.Reader) {
 }
 
 func (m *MsgBlock) Write(h *MessageHeader, w io.Writer) {
-
+	WriteUInt32(w, m.Ver)
+	WriteBytes(w, m.Prev[:])
+	WriteBytes(w, m.Root[:])
+	WriteUInt32(w, m.Timestamp)
+	WriteUInt32(w, m.Bits)
+	WriteUInt32(w, m.Nonce)
+	WriteVarInt(w, uint64(len(m.Txs)))
+	for _, v := range m.Txs {
+		v.Write(w)
+	}
 }
 
 func NewMsgBlock() *MsgBlock {
@@ -204,7 +314,7 @@ func (m *MsgGetData) Command() string {
 }
 
 func (m *MsgGetData) Read(h *MessageHeader, r io.Reader) {
-	num := ReadVarInt(r)
+	num, _ := ReadVarInt(r)
 	m.Invs = make([]*Inventory, num)
 	for i, _ := range m.Invs {
 		m.Invs[i] = &Inventory{}
@@ -249,7 +359,6 @@ func NewMsgTX() *MsgTX {
 	return &MsgTX{}
 }
 
-//
 type MsgINV struct {
 	Invs []*Inventory
 }
@@ -259,7 +368,7 @@ func (m *MsgINV) Command() string {
 }
 
 func (m *MsgINV) Read(h *MessageHeader, r io.Reader) {
-	num := ReadVarInt(r)
+	num, _ := ReadVarInt(r)
 	m.Invs = make([]*Inventory, num)
 	for i, _ := range m.Invs {
 		m.Invs[i] = &Inventory{}
@@ -292,7 +401,7 @@ func (m *MsgGetHeaders) Command() string {
 
 func (m *MsgGetHeaders) Read(h *MessageHeader, r io.Reader) {
 	m.Ver = ReadUInt32(r)
-	num := ReadVarInt(r)
+	num, _ := ReadVarInt(r)
 	m.Blocks = make([]*BHash, num)
 	for i, _ := range m.Blocks {
 		m.Blocks[i] = &BHash{}

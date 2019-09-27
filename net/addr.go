@@ -83,10 +83,10 @@ func (m *MsgAddr) Command() string {
 
 func (m *MsgAddr) Read(h *MessageHeader, r io.Reader) {
 	siz := GetAddressSize()
-	l := 0
-	m.Num = ReadVarInt(r, &l)
-	num := (h.PayloadLen - uint32(l)) / uint32(siz)
-	m.Addrs = make([]*Address, num)
+	num, l := ReadVarInt(r)
+	m.Num = num
+	size := (h.PayloadLen - uint32(l)) / uint32(siz)
+	m.Addrs = make([]*Address, size)
 	for i, _ := range m.Addrs {
 		v := NewAddress(0, "0.0.0.0:0")
 		v.Read(h.Ver >= 31402, r)

@@ -48,6 +48,9 @@ func (c *Client) processMsg(m *NetMessage) error {
 		c.OnReady()
 	case NMT_PING:
 		c.WC <- NewMsgPong()
+	case NMT_HEADERS:
+		mp := NewMsgHeaders()
+		m.Full(mp)
 	case NMT_PONG:
 		pong := NewMsgPong()
 		m.Full(pong)
@@ -69,12 +72,15 @@ func (c *Client) processMsg(m *NetMessage) error {
 	case NMT_INV:
 		mp := NewMsgINV()
 		m.Full(mp)
-
-		if len(mp.Invs) > 0 {
-			s := NewMsgGetData()
-			s.Add(mp.Invs[0])
-			c.WC <- s
-		}
+		//if len(mp.Invs) > 0 {
+		//	s := NewMsgGetData()
+		//	s.Add(mp.Invs[0])
+		//	c.WC <- s
+		//}
+	case NMT_NOTFOUND:
+		mp := NewMsgNotFound()
+		m.Full(mp)
+		log.Println("NMT_NOTFOUND", mp)
 	case NMT_TX:
 		mp := NewMsgTX()
 		m.Full(mp)
@@ -85,8 +91,9 @@ func (c *Client) processMsg(m *NetMessage) error {
 		am := NewMsgAddr()
 		m.Full(am)
 	case NMT_REJECT:
-		mv := NewMsgReject()
-		m.Full(mv)
+		mp := NewMsgReject()
+		m.Full(mp)
+		log.Println("NMT_REJECT", mp.Message, mp.Reason)
 	default:
 		log.Println(m.Header.Command, " not process")
 	}

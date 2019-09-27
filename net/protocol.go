@@ -98,6 +98,7 @@ type MessageHeader struct {
 	PayloadLen uint32
 	CheckSum   []byte
 	Ver        uint32 //data source server app version
+	Payload    []byte //payload raw data
 }
 
 func (m *MessageHeader) HasMagic() bool {
@@ -152,6 +153,7 @@ func ReadMsg(r io.Reader) (h *NetMessage, err error) {
 	if !h.Header.IsValid(pv) {
 		panic(errors.New("checksum error"))
 	}
+	h.Header.Payload = pv
 	h.Payload = bytes.NewReader(pv)
 	return
 }

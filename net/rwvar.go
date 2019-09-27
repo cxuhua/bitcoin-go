@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bitcoin/script"
 	"encoding/binary"
 	"io"
 )
@@ -9,31 +10,24 @@ var (
 	ByteOrder = binary.LittleEndian
 )
 
+func a() (int, int) {
+	return 1, 2
+}
+
 //read var int
-func ReadVarInt(r io.Reader, v ...*int) uint64 {
+func ReadVarInt(r io.Reader) (uint64, int) {
 	b := ReadUint8(r)
 	if b < 0xFD {
-		if len(v) > 0 {
-			*v[0] = 1
-		}
-		return uint64(b)
+		return uint64(b), 1
 	} else if b == 0xFD {
-		if len(v) > 0 {
-			*v[0] = 3
-		}
-		return uint64(ReadUInt16(r))
+		return uint64(ReadUInt16(r)), 3
 	} else if b == 0xFE {
-		if len(v) > 0 {
-			*v[0] = 5
-		}
-		return uint64(ReadUInt32(r))
+		return uint64(ReadUInt32(r)), 5
 	} else if b == 0xFF {
-		if len(v) > 0 {
-			*v[0] = 9
-		}
-		return ReadUInt64(r)
+		return ReadUInt64(r), 9
+	} else {
+		return 0, -1
 	}
-	panic(SizeError)
 }
 
 func WriteVarInt(w io.Writer, v uint64) int {
@@ -53,6 +47,18 @@ func WriteVarInt(w io.Writer, v uint64) int {
 		WriteUInt64(w, uint64(v&0xFFFFFFFFFFFFFFFF))
 		return 9
 	}
+}
+
+func ReadScript(r io.Reader) *script.Script {
+	l, _ := ReadVarInt(r)
+	b := make([]byte, l)
+	ReadBytes(r, b)
+	return script.NewScript(b)
+}
+
+func WriteScript(w io.Writer, s *script.Script) {
+	WriteVarInt(w, uint64((s.Len())))
+	WriteBytes(w, s.Bytes())
 }
 
 func ReadBytes(r io.Reader, b []byte) {
@@ -140,7 +146,7 @@ func WriteUInt64(w io.Writer, v uint64) {
 }
 
 func ReadString(r io.Reader) string {
-	l := ReadVarInt(r)
+	l, _ := ReadVarInt(r)
 	if l == 0 {
 		return ""
 	}
