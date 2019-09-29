@@ -1,13 +1,53 @@
 package script
 
 import (
+	"bytes"
 	"encoding/binary"
+	"errors"
+)
+
+const (
+	INT_MAX           = int(^uint(0) >> 1)
+	INT_MIN           = ^INT_MAX
+	DEFAULT_MINI_SIZE = 4
 )
 
 type ScriptNum int64
 
-func GetScriptNum(b []byte) ScriptNum {
+func (v ScriptNum) ToInt() int {
+	if int64(v) > int64(INT_MAX) {
+		return INT_MAX
+	} else if int64(v) < int64(INT_MIN) {
+		return INT_MIN
+	}
+	return int(v)
+}
+
+func CastToBool(vch []byte) bool {
+	for i := 0; i < len(vch); i++ {
+		if vch[i] != 0 {
+			if i == len(vch)-1 && vch[i] == 0x80 {
+				return false
+			}
+			return true
+		}
+	}
+	return false
+}
+
+func GetScriptNum(b []byte, mini bool, max int) ScriptNum {
 	bl := len(b)
+	if bl > max {
+		panic(errors.New("script number overflow"))
+	}
+	if mini && bl > 0 {
+		lv := b[bl-1]
+		if lv&0x7f == 0 {
+			if bl <= 1 || (b[bl-2]&0x80) == 0 {
+				panic(errors.New("non-minimally encoded script number"))
+			}
+		}
+	}
 	if bl == 0 {
 		return ScriptNum(0)
 	}
@@ -20,6 +60,164 @@ func GetScriptNum(b []byte) ScriptNum {
 		return ScriptNum(-(result & (^tmp)))
 	}
 	return ScriptNum(result)
+}
+
+func IsValidSignatureEncoding(sig []byte) bool {
+	if len(sig) < 9 {
+		return false
+	}
+	if len(sig) > 73 {
+		return false
+	}
+	if sig[0] != 0x30 {
+		return false
+	}
+	if sig[1] != byte(len(sig)-3) {
+		return false
+	}
+	lenR := sig[3]
+
+	if 5+lenR >= byte(len(sig)) {
+		return false
+	}
+	lenS := sig[5+lenR]
+	if int(lenR)+int(lenS)+7 != len(sig) {
+		return false
+	}
+	if sig[2] != 0x02 {
+		return false
+	}
+	if lenR == 0 {
+		return false
+	}
+	if sig[4]&0x80 != 0 {
+		return false
+	}
+	if lenR > 1 && (sig[4] == 0x00) && (sig[5]&0x80 != 0) {
+		return false
+	}
+	if sig[lenR+4] != 0x02 {
+		return false
+	}
+	if lenS == 0 {
+		return false
+	}
+	if sig[lenR+6]&0x80 != 0 {
+		return false
+	}
+	if lenS > 1 && (sig[lenR+6] == 0x00) && (sig[lenR+7]&0x80) != 0 {
+		return false
+	}
+	return true
+}
+
+func PubKeyCheckLowS(pk []byte) bool {
+	return true
+}
+
+func IsLowDERSignature(sig []byte) error {
+	if !IsValidSignatureEncoding(sig) {
+		return SCRIPT_ERR_SIG_DER
+	}
+	cpy := make([]byte, len(sig))
+	copy(cpy, sig)
+	if !PubKeyCheckLowS(cpy) {
+		return SCRIPT_ERR_SIG_HIGH_S
+	}
+	return nil
+}
+
+func IsDefinedHashtypeSignature(sig []byte) bool {
+	if len(sig) == 0 {
+		return false
+	}
+	htype := sig[len(sig)-1] & (^byte(SIGHASH_ANYONECANPAY))
+	if htype < SIGHASH_ALL || htype > SIGHASH_SINGLE {
+		return false
+	}
+	return true
+}
+
+func IsCompressedOrUncompressedPubKey(pb []byte) bool {
+	if len(pb) < COMPRESSED_PUBLIC_KEY_SIZE {
+		return false
+	}
+	if pb[0] == 0x04 {
+		if len(pb) != PUBLIC_KEY_SIZE {
+			return false
+		}
+	} else if pb[0] == 0x02 || pb[0] == 0x03 {
+		if len(pb) != COMPRESSED_PUBLIC_KEY_SIZE {
+			return false
+		}
+	} else {
+		return false
+	}
+	return true
+}
+
+func IsCompressedPubKey(pb []byte) bool {
+	if len(pb) != COMPRESSED_PUBLIC_KEY_SIZE {
+		return false
+	}
+	if pb[0] != 0x02 && pb[0] != 0x03 {
+		return false
+	}
+	return true
+}
+
+func CheckPubKeyEncoding(pb []byte, flags uint32, sigver SigVersion) error {
+	if (flags&SCRIPT_VERIFY_STRICTENC) != 0 && !IsCompressedOrUncompressedPubKey(pb) {
+		return SCRIPT_ERR_PUBKEYTYPE
+	}
+	if (flags&SCRIPT_VERIFY_WITNESS_PUBKEYTYPE) != 0 && sigver == SIG_VER_WITNESS_V0 && !IsCompressedPubKey(pb) {
+		return SCRIPT_ERR_WITNESS_PUBKEYTYPE
+	}
+	return nil
+}
+
+func CheckSignatureEncoding(sig []byte, flags uint32) error {
+	if len(sig) == 0 {
+		return nil
+	}
+	if (flags&(SCRIPT_VERIFY_DERSIG|SCRIPT_VERIFY_LOW_S|SCRIPT_VERIFY_STRICTENC)) != 0 && !IsValidSignatureEncoding(sig) {
+		return SCRIPT_ERR_SIG_DER
+	}
+	if (flags & SCRIPT_VERIFY_LOW_S) != 0 {
+		if err := IsLowDERSignature(sig); err != nil {
+			return err
+		}
+	}
+	if (flags&SCRIPT_VERIFY_STRICTENC) != 0 && !IsDefinedHashtypeSignature(sig) {
+		return SCRIPT_ERR_SIG_HASHTYPE
+	}
+	return nil
+}
+
+func FindAndDelete(s1 *Script, s2 *Script) int {
+	nFound := 0
+	if s2.Len() == 0 {
+		return nFound
+	}
+	ret := NewScript([]byte{})
+	p1, p2, p := 0, 0, s1.Len()
+	for {
+		*ret = append(*ret, (*s1)[p1:p2]...)
+		for p-p1 > s2.Len() && bytes.Equal(*s2, (*s1)[p1:]) {
+			p1 = p1 + s2.Len()
+			nFound++
+		}
+		ok, idx, _, _ := s1.GetOp(p1)
+		if !ok {
+			break
+		}
+		p1 = idx
+	}
+	if nFound > 0 {
+		*ret = append(*ret, (*s1)[p1:p]...)
+		*s1 = *ret
+	}
+	return nFound
 }
 
 func (v ScriptNum) Serialize() []byte {

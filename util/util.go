@@ -25,6 +25,15 @@ func ParseAddr(addr string) (net.IP, uint16) {
 	return ip, port
 }
 
+func MakeAddress(pk []byte) string {
+	a := HASH160(pk)
+	b := []byte{0}
+	b = append(b, a...)
+	c := HASH256(b)
+	b = append(b, c[:4]...)
+	return B58Encode(b, BitcoinAlphabet)
+}
+
 func RandUInt64() uint64 {
 	v := uint64(0)
 	if err := binary.Read(rand.Reader, binary.LittleEndian, &v); err != nil {

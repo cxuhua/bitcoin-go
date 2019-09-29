@@ -73,9 +73,7 @@ func (c *Client) processMsg(m *NetMessage) error {
 		mp := NewMsgINV()
 		m.Full(mp)
 		//if len(mp.Invs) > 0 {
-		//	s := NewMsgGetData()
-		//	s.Add(mp.Invs[0])
-		//	c.WC <- s
+		//	log.Println(hex.EncodeToString(mp.Invs[0].Hash[:]))
 		//}
 	case NMT_NOTFOUND:
 		mp := NewMsgNotFound()
@@ -84,6 +82,7 @@ func (c *Client) processMsg(m *NetMessage) error {
 	case NMT_TX:
 		mp := NewMsgTX()
 		m.Full(mp)
+		log.Println(mp.Tx)
 	case NMT_BLOCK:
 		mp := NewMsgBlock()
 		m.Full(mp)

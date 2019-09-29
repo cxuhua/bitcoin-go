@@ -1,8 +1,11 @@
 package script
 
 import (
+	"bitcoin/util"
+	"bytes"
 	"encoding/hex"
 	"errors"
+	"log"
 )
 
 const (
@@ -264,91 +267,590 @@ const (
 	SCRIPT_VERIFY_CONST_SCRIPTCODE                      = uint32(1) << 16
 )
 
-var (
-	SCRIPT_ERR_BAD_OPCODE             = errors.New("SCRIPT_ERR_BAD_OPCODE")
-	SCRIPT_ERR_OP_COUNT               = errors.New("SCRIPT_ERR_OP_COUNT")
-	SCRIPT_ERR_DISABLED_OPCODE        = errors.New("SCRIPT_ERR_DISABLED_OPCODE")
-	SCRIPT_ERR_MINIMALDATA            = errors.New("SCRIPT_ERR_MINIMALDATA")
-	SCRIPT_ERR_STACK_SIZE             = errors.New("SCRIPT_ERR_STACK_SIZE")
-	SCRIPT_ERR_UNBALANCED_CONDITIONAL = errors.New("SCRIPT_ERR_UNBALANCED_CONDITIONAL")
-)
+func (s Script) SubScript(b, e int) *Script {
+	sub := s[b:e]
+	return NewScript(sub)
+}
 
 //stack []byte
-func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, ver uint) (bool, error) {
-	b, e := 0, s.Len()
-	bl := NewStack() //bool list
-	blf := func(v interface{}) bool {
-		b, ok := v.(bool)
-		return ok && !b
+func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigVersion) (bool, error) {
+	vchFalse := []byte{0}
+	vchTrue := []byte{1, 1}
+	pc, pe := 0, s.Len()
+	pb := pc
+	vfExec := NewStack() //bool list
+	blf := func(v Value) bool {
+		return v.ToBool() == false
 	}
 	alts := NewStack()
 	opc := 0
 	fbMini := (flags & SCRIPT_VERIFY_MINIMALDATA) != 0
-	for b < e {
-		fexec := bl.Count(blf) > 0
-		ok, idx, op, ops := s.GetOp(b)
+	for pc < pe {
+		fexec := vfExec.Count(blf) == 0
+		ok, idx, op, ops := s.GetOp(pc)
 		if !ok {
 			return false, SCRIPT_ERR_BAD_OPCODE
 		}
 		opc++
+		pc = idx
 		if op > OP_16 && opc > MAX_OPS_PER_SCRIPT {
 			return false, SCRIPT_ERR_OP_COUNT
 		}
 		if OpIsDisabled(op) {
 			return false, SCRIPT_ERR_DISABLED_OPCODE
 		}
+		if op == OP_CODESEPARATOR && sigver == SIG_VER_BASE && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
+			return false, SCRIPT_ERR_OP_CODESEPARATOR
+		}
 		if fexec && 0 <= op && op <= OP_PUSHDATA4 {
 			if fbMini && !CheckMinimalPush(ops, op) {
 				return false, SCRIPT_ERR_MINIMALDATA
 			}
+			log.Println("PUSH:", hex.EncodeToString(ops))
 			stack.Push(ops)
 		} else if fexec || (OP_IF <= op && op <= OP_ENDIF) {
 			switch op {
-			case OP_1NEGATE:
-				fallthrough
-			case OP_1:
-				fallthrough
-			case OP_2:
-				fallthrough
-			case OP_3:
-				fallthrough
-			case OP_4:
-				fallthrough
-			case OP_5:
-				fallthrough
-			case OP_6:
-				fallthrough
-			case OP_7:
-				fallthrough
-			case OP_8:
-				fallthrough
-			case OP_9:
-				fallthrough
-			case OP_10:
-				fallthrough
-			case OP_11:
-				fallthrough
-			case OP_12:
-				fallthrough
-			case OP_13:
-				fallthrough
-			case OP_14:
-				fallthrough
-			case OP_15:
-				fallthrough
-			case OP_16:
-				{
-
-				}
+			case OP_1NEGATE, OP_1, OP_2, OP_3, OP_4, OP_5, OP_6, OP_7, OP_8, OP_9, OP_10, OP_11, OP_12, OP_13, OP_14, OP_15, OP_16:
+				num := ScriptNum(int(op) - int(OP_1-1))
+				stack.Push(num.Serialize())
+			case OP_NOP:
 				break
+			case OP_CHECKLOCKTIMEVERIFY:
+				if flags&SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY == 0 {
+					break
+				}
+				t1 := stack.Top(-1)
+				if t1 == nil {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				locktime := t1.ToScriptNum(fbMini, 5)
+				if locktime < 0 {
+					return false, SCRIPT_ERR_NEGATIVE_LOCKTIME
+				}
+				if !checker.CheckLockTime(locktime) {
+					return false, SCRIPT_ERR_UNSATISFIED_LOCKTIME
+				}
+			case OP_CHECKSEQUENCEVERIFY:
+				if flags&SCRIPT_VERIFY_CHECKSEQUENCEVERIFY == 0 {
+					break
+				}
+				t1 := stack.Top(-1)
+				if t1 == nil {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				seq := t1.ToScriptNum(fbMini, 5)
+				if seq < 0 {
+					return false, SCRIPT_ERR_NEGATIVE_LOCKTIME
+				}
+				if uint32(seq)&SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {
+					break
+				}
+				if !checker.CheckSequence(seq) {
+					return false, SCRIPT_ERR_UNSATISFIED_LOCKTIME
+				}
+			case OP_NOP1, OP_NOP4, OP_NOP5, OP_NOP6, OP_NOP7, OP_NOP8, OP_NOP9, OP_NOP10:
+				if flags&SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS != 0 {
+					return false, SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS
+				}
+			case OP_IF, OP_NOTIF:
+				fValue := false
+				if fexec {
+					if stack.Len() < 1 {
+						return false, SCRIPT_ERR_UNBALANCED_CONDITIONAL
+					}
+					vch := stack.Top(-1).ToBytes()
+					if sigver == SIG_VER_WITNESS_V0 && flags&SCRIPT_VERIFY_MINIMALIF != 0 {
+						if len(vch) > 1 {
+							return false, SCRIPT_ERR_MINIMALIF
+						}
+						if len(vch) == 1 && vch[0] != 1 {
+							return false, SCRIPT_ERR_MINIMALIF
+						}
+					}
+					fValue = CastToBool(vch)
+					if op == OP_NOTIF {
+						fValue = !fValue
+					}
+					stack.Pop()
+				}
+				vfExec.Push(NewValueBool(fValue))
+			case OP_ELSE:
+				if vfExec.Empty() {
+					return false, SCRIPT_ERR_UNBALANCED_CONDITIONAL
+				}
+				e := vfExec.Back()
+				e.Value = !e.Value.(bool)
+			case OP_ENDIF:
+				if vfExec.Empty() {
+					return false, SCRIPT_ERR_UNBALANCED_CONDITIONAL
+				}
+				vfExec.Pop()
+			case OP_VERIFY:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				fValue := stack.Top(-1).ToBool()
+				if fValue {
+					stack.Pop()
+				} else {
+					return false, SCRIPT_ERR_VERIFY
+				}
+			case OP_RETURN:
+				return false, SCRIPT_ERR_OP_RETURN
+			case OP_TOALTSTACK:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				alts.Push(stack.Pop())
+			case OP_FROMALTSTACK:
+				if alts.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				stack.Push(alts.Pop())
+			case OP_2DROP:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				stack.Pop()
+				stack.Pop()
+			case OP_2DUP:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-2)
+				v2 := stack.Top(-1)
+				stack.Push(v1)
+				stack.Push(v2)
+			case OP_3DUP:
+				if stack.Len() < 3 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-3)
+				v2 := stack.Top(-2)
+				v3 := stack.Top(-1)
+				stack.Push(v1)
+				stack.Push(v2)
+				stack.Push(v3)
+			case OP_2OVER:
+				if stack.Len() < 4 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-4)
+				v2 := stack.Top(-3)
+				stack.Push(v1)
+				stack.Push(v2)
+			case OP_2ROT:
+				if stack.Len() < 6 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-6)
+				v2 := stack.Top(-5)
+				stack.EraseRange(-6, -4)
+				stack.Push(v1)
+				stack.Push(v2)
+			case OP_2SWAP:
+				if stack.Len() < 4 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v4 := stack.TopElement(-4)
+				v3 := stack.TopElement(-3)
+				v2 := stack.TopElement(-2)
+				v1 := stack.TopElement(-1)
+				v4.Value, v2.Value = v2.Value, v4.Value
+				v3.Value, v1.Value = v1.Value, v3.Value
+			case OP_IFDUP:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-1).ToBytes()
+				if CastToBool(v1) {
+					stack.Push(v1)
+				}
+			case OP_DEPTH:
+				num := ScriptNum(stack.Len())
+				stack.Push(num.Serialize())
+			case OP_DROP:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				stack.Pop()
+			case OP_DUP:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-1)
+				stack.Push(v1)
+			case OP_NIP:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				stack.EraseIndex(-2)
+			case OP_OVER:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-2)
+				stack.Push(v1)
+			case OP_PICK, OP_ROLL:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-1).ToBytes()
+				n := GetScriptNum(v1, fbMini, DEFAULT_MINI_SIZE).ToInt()
+				stack.Pop()
+				if n < 0 || n >= stack.Len() {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v2 := stack.Top(-n - 1)
+				if op == OP_ROLL {
+					stack.EraseIndex(-n - 1)
+				}
+				stack.Push(v2)
+			case OP_ROT:
+				if stack.Len() < 3 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v3 := stack.TopElement(-3)
+				v2 := stack.TopElement(-2)
+				v1 := stack.TopElement(-1)
+				v3.Value, v2.Value = v2.Value, v3.Value
+				v2.Value, v1.Value = v1.Value, v2.Value
+			case OP_SWAP:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v2 := stack.TopElement(-2)
+				v1 := stack.TopElement(-1)
+				v2.Value, v1.Value = v1.Value, v2.Value
+			case OP_TUCK:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-1)
+				v2 := stack.TopElement(-2)
+				stack.InsertBefore(v1, v2)
+			case OP_SIZE:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				siz := ScriptNum(stack.Top(-1).Len())
+				stack.Push(siz.Serialize())
+			case OP_EQUAL, OP_EQUALVERIFY:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-2).ToBytes()
+				v2 := stack.Top(-1).ToBytes()
+				stack.Pop()
+				stack.Pop()
+				fEqual := bytes.Equal(v1, v2)
+				if fEqual {
+					stack.Push(vchTrue)
+				} else {
+					stack.Push(vchFalse)
+				}
+				if op == OP_EQUALVERIFY {
+					if fEqual {
+						stack.Pop()
+					} else {
+						return false, SCRIPT_ERR_EQUALVERIFY
+					}
+				}
+			case OP_1ADD, OP_1SUB, OP_NEGATE, OP_ABS, OP_NOT, OP_0NOTEQUAL:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				bn := stack.Top(-1).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				switch op {
+				case OP_1ADD:
+					bn++
+				case OP_1SUB:
+					bn--
+				case OP_NEGATE:
+					bn = -bn
+				case OP_ABS:
+					if bn < 0 {
+						bn = -bn
+					}
+				case OP_NOT:
+					if bn == 0 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_0NOTEQUAL:
+					if bn != 0 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				}
+				stack.Pop()
+				stack.Push(bn.Serialize())
+			case OP_ADD, OP_SUB, OP_BOOLAND, OP_BOOLOR, OP_NUMEQUAL, OP_NUMEQUALVERIFY, OP_NUMNOTEQUAL, OP_LESSTHAN, OP_GREATERTHAN, OP_LESSTHANOREQUAL, OP_GREATERTHANOREQUAL, OP_MIN, OP_MAX:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				bn1 := stack.Top(-2).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				bn2 := stack.Top(-1).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				bn := ScriptNum(0)
+				switch op {
+				case OP_ADD:
+					bn = bn1 + bn2
+				case OP_SUB:
+					bn = bn1 - bn2
+				case OP_BOOLAND:
+					if bn1 != 0 && bn2 != 0 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_BOOLOR:
+					if bn1 != 0 || bn2 != 0 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_NUMEQUAL:
+					if bn1 == bn2 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_NUMEQUALVERIFY:
+					if bn1 == bn2 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_NUMNOTEQUAL:
+					if bn1 != bn2 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_LESSTHAN:
+					if bn1 < bn2 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_GREATERTHAN:
+					if bn1 > bn2 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_LESSTHANOREQUAL:
+					if bn1 <= bn2 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_GREATERTHANOREQUAL:
+					if bn1 >= bn2 {
+						bn = 1
+					} else {
+						bn = 0
+					}
+				case OP_MIN:
+					if bn1 < bn2 {
+						bn = bn1
+					} else {
+						bn = bn2
+					}
+				case OP_MAX:
+					if bn1 > bn2 {
+						bn = bn1
+					} else {
+						bn = bn2
+					}
+				}
+				stack.Pop()
+				stack.Pop()
+				stack.Push(bn.Serialize())
+				if op == OP_NUMEQUALVERIFY {
+					v1 := stack.Top(-1).ToBool()
+					if v1 {
+						stack.Pop()
+					} else {
+						return false, SCRIPT_ERR_NUMEQUALVERIFY
+					}
+				}
+			case OP_WITHIN:
+				if stack.Len() < 3 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				bn1 := stack.Top(-3).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				bn2 := stack.Top(-2).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				bn3 := stack.Top(-1).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				fvalue := (bn2 <= bn1 && bn1 < bn3)
+				stack.Pop()
+				stack.Pop()
+				stack.Pop()
+				if fvalue {
+					stack.Push(vchTrue)
+				} else {
+					stack.Push(vchFalse)
+				}
+			case OP_RIPEMD160, OP_SHA1, OP_SHA256, OP_HASH160, OP_HASH256:
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				vch1 := stack.Top(-1).ToBytes()
+				var hv []byte = nil
+				if op == OP_RIPEMD160 {
+					hv = util.RIPEMD160(vch1)
+				} else if op == OP_SHA256 {
+					hv = util.SHA256(vch1)
+				} else if op == OP_HASH160 {
+					hv = util.HASH160(vch1)
+				} else if op == OP_HASH256 {
+					hv = util.HASH256(vch1)
+				} else if op == OP_SHA1 {
+					hv = util.SHA1(vch1)
+				} else {
+					return false, SCRIPT_ERR_BAD_OPCODE
+				}
+				stack.Pop()
+				stack.Push(hv)
+			case OP_CODESEPARATOR:
+				pb = pc
+				log.Println("OP_CODESEPARATOR", pb)
+			case OP_CHECKSIG, OP_CHECKSIGVERIFY:
+				if stack.Len() < 2 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				sig := stack.Top(-2).ToBytes()
+				pk := stack.Top(-1).ToBytes()
+				sub := s.SubScript(pb, pe)
+				if sigver == SIG_VER_BASE {
+					found := FindAndDelete(sub, NewScript(sig))
+					if found > 0 && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
+						return false, SCRIPT_ERR_SIG_FINDANDDELETE
+					}
+				}
+				if err := CheckSignatureEncoding(sig, flags); err != nil {
+					return false, err
+				}
+				if err := CheckPubKeyEncoding(pk, flags, sigver); err != nil {
+					return false, err
+				}
+				success := checker.CheckSig(sig, pk, sub, sigver)
+				if !success && flags&SCRIPT_VERIFY_NULLFAIL != 0 && len(sig) > 0 {
+					return false, SCRIPT_ERR_SIG_NULLFAIL
+				}
+				stack.Pop()
+				stack.Pop()
+				if op == OP_CHECKSIGVERIFY {
+					if success {
+						stack.Pop()
+					} else {
+						return false, SCRIPT_ERR_CHECKSIGVERIFY
+					}
+				}
+			case OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY:
+				i := 1
+				if stack.Len() < i {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				keyscount := stack.Top(-1).ToInt(fbMini, DEFAULT_MINI_SIZE)
+				if keyscount < 0 || keyscount > MAX_PUBKEYS_PER_MULTISIG {
+					return false, SCRIPT_ERR_PUBKEY_COUNT
+				}
+				opc += keyscount
+				if opc > MAX_OPS_PER_SCRIPT {
+					return false, SCRIPT_ERR_OP_COUNT
+				}
+				i++
+				ikey1 := i
+				ikey2 := keyscount + 2
+				i += keyscount
+				if stack.Len() < i {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				sigcount := stack.Top(-1).ToInt(fbMini, DEFAULT_MINI_SIZE)
+				if sigcount < 0 || sigcount > keyscount {
+					return false, SCRIPT_ERR_SIG_COUNT
+				}
+				i++
+				isig := i
+				i += sigcount
+				if stack.Len() < i {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				sub := s.SubScript(pb, pe)
+				for k := 0; k < sigcount; k++ {
+					sig := stack.Top(-isig - k).ToBytes()
+					if sigver == SIG_VER_BASE {
+						found := FindAndDelete(sub, NewScript(sig))
+						if found > 0 && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
+							return false, SCRIPT_ERR_SIG_FINDANDDELETE
+						}
+					}
+				}
+				success := true
+				for success && sigcount > 0 {
+					sig := stack.Top(-isig).ToBytes()
+					pk := stack.Top(-ikey1).ToBytes()
+					if err := CheckSignatureEncoding(sig, flags); err != nil {
+						return false, err
+					}
+					if err := CheckPubKeyEncoding(pk, flags, sigver); err != nil {
+						return false, err
+					}
+					fok := checker.CheckSig(sig, pk, sub, sigver)
+					if fok {
+						isig++
+						sigcount++
+					}
+					ikey1++
+					keyscount++
+					if sigcount > keyscount {
+						success = false
+					}
+				}
+				for i > 1 {
+					v1 := stack.Top(-1).ToBytes()
+					if !success && (flags&SCRIPT_VERIFY_NULLFAIL) != 0 && ikey2 != 0 && len(v1) > 0 {
+						return false, SCRIPT_ERR_SIG_NULLFAIL
+					}
+					if ikey2 > 0 {
+						ikey2--
+					}
+					stack.Pop()
+					i--
+				}
+				if stack.Len() < 1 {
+					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
+				}
+				v1 := stack.Top(-1).ToBytes()
+				if (flags&SCRIPT_VERIFY_NULLDUMMY) != 0 && len(v1) > 0 {
+					return false, SCRIPT_ERR_SIG_NULLDUMMY
+				}
+				stack.Pop()
+				if success {
+					stack.Push(vchTrue)
+				} else {
+					stack.Push(vchFalse)
+				}
+				if op == OP_CHECKMULTISIGVERIFY {
+					if success {
+						stack.Pop()
+					} else {
+						return false, SCRIPT_ERR_CHECKMULTISIGVERIFY
+					}
+				}
+			default:
+				return false, SCRIPT_ERR_BAD_OPCODE
 			}
 			if stack.Len()+alts.Len() > MAX_STACK_SIZE {
 				return false, SCRIPT_ERR_STACK_SIZE
 			}
+
 		}
-		b = idx
 	}
-	if !bl.Empty() {
+	if !vfExec.Empty() {
 		return false, SCRIPT_ERR_UNBALANCED_CONDITIONAL
 	}
 	return true, nil

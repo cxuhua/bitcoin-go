@@ -4,6 +4,7 @@ import (
 	"bitcoin/script"
 	"encoding/hex"
 	"io"
+	"log"
 	"strings"
 )
 
@@ -120,14 +121,16 @@ func (m *TxIn) Write(w io.Writer) {
 }
 
 type TX struct {
-	Ver      uint32
+	Ver      int32
 	Ins      []*TxIn
 	Outs     []*TxOut
 	LockTime uint32
 }
 
 func (m *TX) Read(r io.Reader) {
-	m.Ver = ReadUInt32(r)
+	m.Ver = int32(ReadUInt32(r))
+	w := ReadUInt16(r)
+	log.Println(w)
 	il, _ := ReadVarInt(r)
 	m.Ins = make([]*TxIn, il)
 	for i, _ := range m.Ins {
@@ -146,7 +149,7 @@ func (m *TX) Read(r io.Reader) {
 }
 
 func (m *TX) Write(w io.Writer) {
-	WriteUInt32(w, m.Ver)
+	WriteUInt32(w, uint32(m.Ver))
 	WriteVarInt(w, uint64(len(m.Ins)))
 	for _, v := range m.Ins {
 		v.Write(w)
