@@ -22,3 +22,22 @@ type SigChecker interface {
 	CheckLockTime(num ScriptNum) bool
 	CheckSequence(num ScriptNum) bool
 }
+
+type baseSigChecker struct {
+}
+
+func (sc *baseSigChecker) CheckSig(sig []byte, pubkey []byte, script *Script, sigver SigVersion) bool {
+	panic("Not Imp")
+}
+
+func (sc *baseSigChecker) CheckLockTime(num ScriptNum) bool {
+	panic("Not Imp")
+}
+
+func (sc *baseSigChecker) CheckSequence(num ScriptNum) bool {
+	panic("Not Imp")
+}
+
+func NewBaseSigChecker() SigChecker {
+	return &baseSigChecker{}
+}

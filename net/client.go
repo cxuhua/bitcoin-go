@@ -20,7 +20,7 @@ type Client struct {
 	cancel    context.CancelFunc
 	Type      int
 	WC        chan MsgIO
-	RC        chan *NetMessage
+	RC        chan *NetHeader
 	IP        net.IP
 	Port      uint16
 	connected bool
@@ -31,12 +31,12 @@ type Client struct {
 	ping      int
 }
 
-func (c *Client) processMsg(m *NetMessage) error {
+func (c *Client) processMsg(m *NetHeader) error {
 	if c.Acked {
-		m.Header.Ver = c.VerInfo.Ver
+		m.Ver = c.VerInfo.Ver
 	}
-	log.Println("CMD=", m.Header.Command, "PAYLOAD Size=", m.Header.PayloadLen)
-	switch m.Header.Command {
+	log.Println("CMD=", m.Command, "Size=", m.Len())
+	switch m.Command {
 	case NMT_VERSION:
 		msg := &MsgVersion{}
 		m.Full(msg)
@@ -82,7 +82,6 @@ func (c *Client) processMsg(m *NetMessage) error {
 	case NMT_TX:
 		mp := NewMsgTX()
 		m.Full(mp)
-		log.Println(mp.Tx)
 	case NMT_BLOCK:
 		mp := NewMsgBlock()
 		m.Full(mp)
@@ -94,7 +93,7 @@ func (c *Client) processMsg(m *NetMessage) error {
 		m.Full(mp)
 		log.Println("NMT_REJECT", mp.Message, mp.Reason)
 	default:
-		log.Println(m.Header.Command, " not process")
+		log.Println(m.Command, " not process")
 	}
 	return nil
 }
@@ -151,6 +150,7 @@ func (c *Client) run() {
 			log.Println("connect error", err)
 			time.Sleep(time.Second * 3)
 			c.try--
+			return
 		}
 		if c.try <= 0 && !c.connected {
 			log.Println("try connect failed,try == 0")
@@ -230,7 +230,7 @@ func NewClient(typ int, addr string) *Client {
 	c.Port = port
 	c.Type = typ
 	c.WC = make(chan MsgIO, 10)
-	c.RC = make(chan *NetMessage, 10)
+	c.RC = make(chan *NetHeader, 10)
 	c.try = 3
 	c.ptimer = time.NewTimer(time.Second * 60)
 	c.ctx, c.cancel = context.WithCancel(context.Background())

@@ -16,6 +16,8 @@ type Config struct {
 	SubVer string
 	//local listen ip port
 	LocalAddr string //ip:port
+	//
+	SegwitHeight uint
 }
 
 func (c Config) GetLocalAddr() (string, uint16) {
@@ -59,6 +61,7 @@ func GetConfig() *Config {
 	}
 	c.SubVer = "/golang:0.1.0/"
 	c.LocalAddr = "192.168.31.198:8333"
+	c.SegwitHeight = 481824
 	config = c
 	return config
 }

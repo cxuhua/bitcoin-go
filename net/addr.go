@@ -1,9 +1,5 @@
 package net
 
-import (
-	"io"
-)
-
 type MsgSendCmpct struct {
 	Inter uint8
 	Ver   uint64
@@ -13,14 +9,14 @@ func (m *MsgSendCmpct) Command() string {
 	return NMT_SENDCMPCT
 }
 
-func (m *MsgSendCmpct) Read(h *MessageHeader, r io.Reader) {
-	m.Inter = ReadUint8(r)
-	m.Ver = ReadUInt64(r)
+func (m *MsgSendCmpct) Read(h *NetHeader) {
+	m.Inter = h.ReadUint8()
+	m.Ver = h.ReadUInt64()
 }
 
-func (m *MsgSendCmpct) Write(h *MessageHeader, w io.Writer) {
-	WriteUint8(w, m.Inter)
-	WriteUInt64(w, m.Ver)
+func (m *MsgSendCmpct) Write(h *NetHeader) {
+	h.WriteUint8(m.Inter)
+	h.WriteUInt64(m.Ver)
 }
 
 func NewMsgSendCmpct() *MsgSendCmpct {
@@ -37,12 +33,12 @@ func (m *MsgFeeFilter) Command() string {
 	return NMT_FEEFILTER
 }
 
-func (m *MsgFeeFilter) Read(h *MessageHeader, r io.Reader) {
-	m.FeeRate = ReadUInt64(r)
+func (m *MsgFeeFilter) Read(h *NetHeader) {
+	m.FeeRate = h.ReadUInt64()
 }
 
-func (m *MsgFeeFilter) Write(h *MessageHeader, w io.Writer) {
-	WriteUInt64(w, m.FeeRate)
+func (m *MsgFeeFilter) Write(h *NetHeader) {
+	h.WriteUInt64(m.FeeRate)
 }
 
 func NewMsgFeeFilter() *MsgFeeFilter {
@@ -58,11 +54,11 @@ func (m *MsgSendHeaders) Command() string {
 	return NMT_SENDHEADERS
 }
 
-func (m *MsgSendHeaders) Read(h *MessageHeader, r io.Reader) {
+func (m *MsgSendHeaders) Read(h *NetHeader) {
 	//no payload
 }
 
-func (m *MsgSendHeaders) Write(h *MessageHeader, w io.Writer) {
+func (m *MsgSendHeaders) Write(h *NetHeader) {
 	//no payload
 }
 
@@ -81,20 +77,20 @@ func (m *MsgAddr) Command() string {
 	return NMT_ADDR
 }
 
-func (m *MsgAddr) Read(h *MessageHeader, r io.Reader) {
+func (m *MsgAddr) Read(h *NetHeader) {
 	siz := GetAddressSize()
-	num, l := ReadVarInt(r)
+	num, l := h.ReadVarInt()
 	m.Num = num
-	size := (h.PayloadLen - uint32(l)) / uint32(siz)
+	size := (h.Len() - uint32(l)) / uint32(siz)
 	m.Addrs = make([]*Address, size)
 	for i, _ := range m.Addrs {
 		v := NewAddress(0, "0.0.0.0:0")
-		v.Read(h.Ver >= 31402, r)
+		v.Read(h, h.Ver >= 31402)
 		m.Addrs[i] = v
 	}
 }
 
-func (m *MsgAddr) Write(h *MessageHeader, w io.Writer) {
+func (m *MsgAddr) Write(h *NetHeader) {
 	//no payload
 }
 
@@ -110,11 +106,11 @@ func (m *MsgGetAddr) Command() string {
 	return NMT_GETADDR
 }
 
-func (m *MsgGetAddr) Read(h *MessageHeader, r io.Reader) {
+func (m *MsgGetAddr) Read(h *NetHeader) {
 	//no payload
 }
 
-func (m *MsgGetAddr) Write(h *MessageHeader, w io.Writer) {
+func (m *MsgGetAddr) Write(h *NetHeader) {
 	//no payload
 }
 

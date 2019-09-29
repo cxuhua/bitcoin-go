@@ -4,6 +4,7 @@ import (
 	"bitcoin/config"
 	"bitcoin/util"
 	"bytes"
+	"encoding/binary"
 	"errors"
 	"io"
 	"net"
@@ -39,6 +40,7 @@ const (
 	NMT_CMPCTBLOCK  = "cmpctblock"
 	NMT_GETBLOCKTXN = "getblocktxn"
 	NMT_BLOCKTXN    = "blocktxn"
+	NMT_UNKNNOW     = "unknow"
 )
 
 const (
@@ -87,27 +89,44 @@ var (
 )
 
 type MsgIO interface {
-	Write(h *MessageHeader, w io.Writer)
-	Read(h *MessageHeader, r io.Reader)
+	Write(h *NetHeader)
+	Read(h *NetHeader)
 	Command() string
 }
 
-type MessageHeader struct {
-	Start      []byte
-	Command    string
-	PayloadLen uint32
-	CheckSum   []byte
-	Ver        uint32 //data source server app version
-	Payload    []byte //payload raw data
+type NetHeader struct {
+	*MsgBuffer
+	Start    []byte //4
+	Command  string //12
+	CheckSum []byte //4
+	Ver      uint32 //4 data source server app version
 }
 
-func (m *MessageHeader) HasMagic() bool {
+func NewNetHeader(cmd string, b []byte) *NetHeader {
+	m := &NetHeader{}
+	conf := config.GetConfig()
+	m.Ver = PROTOCOL_VERSION
+	m.Start = conf.MsgStart
+	m.Command = cmd
+	m.MsgBuffer = NewMsgBuffer(b)
+	return m
+}
+
+func (m *NetHeader) HeadLen() uint32 {
+	return 24
+}
+
+func (m *NetHeader) Len() uint32 {
+	return uint32(len(m.Payload))
+}
+
+func (m *NetHeader) HasMagic() bool {
 	conf := config.GetConfig()
 	return bytes.Equal(m.Start, conf.MsgStart)
 }
 
-func (m *MessageHeader) IsValid(b []byte) bool {
-	return bytes.Equal(util.HashP4(b), m.CheckSum)
+func (m *NetHeader) IsValid() bool {
+	return bytes.Equal(util.HashP4(m.Payload), m.CheckSum)
 }
 
 func WriteMsg(w io.Writer, m MsgIO) error {
@@ -125,91 +144,88 @@ func WriteMsg(w io.Writer, m MsgIO) error {
 	return nil
 }
 
-type NetMessage struct {
-	Header  *MessageHeader
-	Payload io.Reader
-}
-
-func (m *NetMessage) Full(mp MsgIO) {
-	mp.Read(m.Header, m.Payload)
+func (h *NetHeader) Full(mp MsgIO) {
+	mp.Read(h)
 }
 
 //read package
-func ReadMsg(r io.Reader) (h *NetMessage, err error) {
-	defer func() {
-		if rerr := recover(); rerr != nil {
-			err = rerr.(error)
-		}
-	}()
-	h = &NetMessage{
-		Header: &MessageHeader{},
+func ReadMsg(r io.Reader) (*NetHeader, error) {
+	h := NewNetHeader(NMT_BLOCK, []byte{})
+	if err := h.ReadHeader(r); err != nil {
+		return nil, err
 	}
-	h.Header.Read(r)
-	if !h.Header.HasMagic() {
-		panic(errors.New("start bytes error"))
+	if !h.HasMagic() {
+		return nil, errors.New("start bytes error")
 	}
-	pv := make([]byte, h.Header.PayloadLen)
-	ReadBytes(r, pv)
-	if !h.Header.IsValid(pv) {
-		panic(errors.New("checksum error"))
+	if err := binary.Read(r, ByteOrder, h.Payload); err != nil {
+		return nil, err
 	}
-	h.Header.Payload = pv
-	h.Payload = bytes.NewReader(pv)
-	return
+	if !h.IsValid() {
+		return nil, errors.New("checksum error")
+	}
+	return h, nil
 }
 
-func ToMessageBytes(w MsgIO) (ret []byte, err error) {
-	defer func() {
-		if rerr := recover(); rerr != nil {
-			ret = nil
-			err = rerr.(error)
-		}
-	}()
-	conf := config.GetConfig()
-
-	m := &MessageHeader{}
-
-	m.Start = conf.MsgStart
-	m.Command = w.Command()
-
-	pbuf := &bytes.Buffer{}
-	w.Write(m, pbuf)
-
-	m.PayloadLen = uint32(pbuf.Len())
-	m.CheckSum = util.HashP4(pbuf.Bytes())
-
-	hbuf := &bytes.Buffer{}
-	m.Write(hbuf)
-
-	hbuf.Write(pbuf.Bytes())
-
-	ret = hbuf.Bytes()
-	err = nil
-	return
+func ToMessageBytes(w MsgIO) ([]byte, error) {
+	m := NewNetHeader(w.Command(), []byte{})
+	//full payload
+	w.Write(m)
+	//get send bytes
+	hb := &bytes.Buffer{}
+	if err := m.WriteHeader(hb); err != nil {
+		return nil, err
+	}
+	return hb.Bytes(), nil
 }
 
-func (m *MessageHeader) Read(r io.Reader) {
+func (m *NetHeader) ReadHeader(r io.Reader) error {
 	m.Start = []byte{0, 0, 0, 0}
-	ReadBytes(r, m.Start)
+	if err := binary.Read(r, ByteOrder, m.Start); err != nil {
+		return err
+	}
 	cmd := make([]byte, NMT_COMMAND_SIZE)
-	ReadBytes(r, cmd)
+	if err := binary.Read(r, ByteOrder, cmd); err != nil {
+		return err
+	}
 	m.Command = util.String(cmd)
-	m.PayloadLen = ReadUInt32(r)
+	pl := uint32(0)
+	if err := binary.Read(r, ByteOrder, &pl); err != nil {
+		return err
+	}
+	m.Payload = make([]byte, pl)
 	m.CheckSum = []byte{0, 0, 0, 0}
-	ReadBytes(r, m.CheckSum)
+	if err := binary.Read(r, ByteOrder, m.CheckSum); err != nil {
+		return err
+	}
+	return nil
 }
 
-func (m *MessageHeader) Write(w io.Writer) {
+func (m *NetHeader) WriteHeader(w io.Writer) error {
 	// 4 start
-	WriteBytes(w, m.Start)
+	if err := binary.Write(w, ByteOrder, m.Start); err != nil {
+		return err
+	}
 	//12 command
 	cmd := make([]byte, NMT_COMMAND_SIZE)
 	copy(cmd, []byte(m.Command))
-	WriteBytes(w, cmd)
+	if err := binary.Write(w, ByteOrder, cmd); err != nil {
+		return err
+	}
 	//payload size
-	WriteUInt32(w, m.PayloadLen)
+	pl := uint32(len(m.Payload))
+	if err := binary.Write(w, ByteOrder, pl); err != nil {
+		return err
+	}
+	m.CheckSum = util.HashP4(m.Payload)
 	//checksum
-	WriteBytes(w, m.CheckSum)
+	if err := binary.Write(w, ByteOrder, m.CheckSum); err != nil {
+		return err
+	}
+	//payload
+	if err := binary.Write(w, ByteOrder, m.Payload); err != nil {
+		return err
+	}
+	return nil
 }
 
 type Address struct {
@@ -232,23 +248,23 @@ func NewAddress(s uint64, addr string) *Address {
 	}
 }
 
-func (a *Address) Read(pt bool, r io.Reader) {
+func (a *Address) Read(m *NetHeader, pt bool) {
 	if pt {
-		a.Time = ReadUInt32(r)
+		a.Time = m.ReadUInt32()
 	}
-	a.Service = ReadUInt64(r)
+	a.Service = m.ReadUInt64()
 	a.IpAddr = make([]byte, net.IPv6len)
-	ReadBytes(r, a.IpAddr)
-	a.Port = ReadUInt16(r)
+	m.ReadBytes(a.IpAddr)
+	a.Port = m.ReadUInt16()
 }
 
-func (a *Address) Write(pt bool, w io.Writer) {
+func (a *Address) Write(m *NetHeader, pt bool) {
 	if pt {
-		WriteUInt32(w, a.Time)
+		m.WriteUInt32(a.Time)
 	}
-	WriteUInt64(w, a.Service)
-	WriteBytes(w, a.IpAddr[:])
-	WriteUInt16(w, a.Port)
+	m.WriteUInt64(a.Service)
+	m.WriteBytes(a.IpAddr[:])
+	m.WriteUInt16(a.Port)
 }
 
 //version payload
@@ -268,37 +284,37 @@ func (m *MsgVersion) Command() string {
 	return NMT_VERSION
 }
 
-func (m *MsgVersion) Read(h *MessageHeader, r io.Reader) {
+func (m *MsgVersion) Read(h *NetHeader) {
 	m.SAddr = NewAddress(0, "0.0.0.0:0")
 	m.DAddr = NewAddress(0, "0.0.0.0:0")
-	m.Ver = ReadUInt32(r)
-	m.Service = ReadUInt64(r)
-	m.Timestamp = ReadUInt64(r)
-	m.SAddr.Read(false, r)
+	m.Ver = h.ReadUInt32()
+	m.Service = h.ReadUInt64()
+	m.Timestamp = h.ReadUInt64()
+	m.SAddr.Read(h, false)
 	if m.Ver >= 106 {
-		m.DAddr.Read(false, r)
-		m.Nonce = ReadUInt64(r)
-		m.SubVer = ReadString(r)
-		m.Height = ReadUInt32(r)
+		m.DAddr.Read(h, false)
+		m.Nonce = h.ReadUInt64()
+		m.SubVer = h.ReadString()
+		m.Height = h.ReadUInt32()
 	}
 	if m.Ver >= 70001 {
-		m.Relay = ReadUint8(r)
+		m.Relay = h.ReadUint8()
 	}
 }
 
-func (m *MsgVersion) Write(h *MessageHeader, w io.Writer) {
-	WriteUInt32(w, m.Ver)
-	WriteUInt64(w, m.Service)
-	WriteUInt64(w, m.Timestamp)
-	m.SAddr.Write(false, w)
+func (m *MsgVersion) Write(h *NetHeader) {
+	h.WriteUInt32(m.Ver)
+	h.WriteUInt64(m.Service)
+	h.WriteUInt64(m.Timestamp)
+	m.SAddr.Write(h, false)
 	if m.Ver >= 106 {
-		m.DAddr.Write(false, w)
-		WriteUInt64(w, m.Nonce)
-		WriteString(w, m.SubVer)
-		WriteUInt32(w, m.Height)
+		m.DAddr.Write(h, false)
+		h.WriteUInt64(m.Nonce)
+		h.WriteString(m.SubVer)
+		h.WriteUInt32(m.Height)
 	}
 	if m.Ver >= 70001 {
-		WriteUint8(w, m.Relay)
+		h.WriteUint8(m.Relay)
 	}
 }
 
@@ -326,12 +342,12 @@ func (m *MsgPong) Command() string {
 	return NMT_PONG
 }
 
-func (m *MsgPong) Read(h *MessageHeader, r io.Reader) {
-	m.Timestamp = ReadUInt64(r)
+func (m *MsgPong) Read(h *NetHeader) {
+	m.Timestamp = h.ReadUInt64()
 }
 
-func (m *MsgPong) Write(h *MessageHeader, w io.Writer) {
-	WriteUInt64(w, m.Timestamp)
+func (m *MsgPong) Write(h *NetHeader) {
+	h.WriteUInt64(m.Timestamp)
 }
 
 func (m *MsgPong) Ping() int {
@@ -352,12 +368,12 @@ func (m *MsgPing) Command() string {
 	return NMT_PING
 }
 
-func (m *MsgPing) Read(h *MessageHeader, r io.Reader) {
-	m.Timestamp = ReadUInt64(r)
+func (m *MsgPing) Read(h *NetHeader) {
+	m.Timestamp = h.ReadUInt64()
 }
 
-func (m *MsgPing) Write(h *MessageHeader, w io.Writer) {
-	WriteUInt64(w, m.Timestamp)
+func (m *MsgPing) Write(h *NetHeader) {
+	h.WriteUInt64(m.Timestamp)
 }
 
 func NewMsgPing() *MsgPing {
@@ -372,11 +388,11 @@ func (m *MsgVerAck) Command() string {
 	return NMT_VERACK
 }
 
-func (m *MsgVerAck) Read(h *MessageHeader, r io.Reader) {
+func (m *MsgVerAck) Read(h *NetHeader) {
 	//no payload
 }
 
-func (m *MsgVerAck) Write(h *MessageHeader, w io.Writer) {
+func (m *MsgVerAck) Write(h *NetHeader) {
 	//no payload
 }
 
