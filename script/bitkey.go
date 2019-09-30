@@ -25,7 +25,7 @@ const (
 )
 
 var (
-	curve = elliptic.P256()
+	curve = util.SECP256K1()
 	one   = big.NewInt(1)
 )
 

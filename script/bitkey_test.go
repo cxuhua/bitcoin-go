@@ -1,13 +1,13 @@
 package script
 
 import (
+	"bitcoin/util"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"fmt"
 	"log"
-	"math/big"
 	"testing"
 )
 
@@ -19,18 +19,8 @@ func TestSelf(t *testing.T) {
 	}
 	log.Println(a.x, a.y)
 
-	//x*x*x
-	x2 := big.NewInt(0).Mul(a.x, a.x)
-	x3 := big.NewInt(0).Mul(x2, a.x)
-	c := big.NewInt(7)
-	c.Add(c, x3)
+	log.Println(util.DecompressY(a.x, uint(BigIntOdd(a.y))))
 
-	y := big.NewInt(0).Sqrt(c)
-	if BigIntOdd(y) == 0 {
-		log.Println(y.Neg(y))
-	} else {
-		log.Println(y)
-	}
 	//dump := pri.Dump(true, true)
 	//np := &PrivateKey{}
 	//err = np.Load(dump, true)
