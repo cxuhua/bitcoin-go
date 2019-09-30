@@ -261,6 +261,89 @@ func (s Script) HasValidOps() bool {
 	return true
 }
 
+func (s Script) IsPayToScriptHash() bool {
+	return (s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL)
+}
+
+//return ver programe ok
+func (s Script) IsWitnessProgram() (int, []byte, bool) {
+	if s.Len() < 4 || s.Len() > 42 {
+		return 0, nil, false
+	}
+	if s[0] != OP_0 && (s[0] < OP_1 || s[0] > OP_16) {
+		return 0, nil, false
+	}
+	if int(s[1]+2) == s.Len() {
+		ver := DecodeOP(s[0])
+		program := s[2:]
+		return ver, program, true
+	}
+	return 0, nil, false
+}
+
+func (s Script) GetScriptSigOpCount(script *Script) int {
+	if !s.IsPayToScriptHash() {
+		return s.GetSigOpCount(true)
+	}
+	var subd []byte = nil
+	pc := 0
+	for pc < script.Len() {
+		ok, idx, op, item := script.GetOp(pc)
+		if !ok {
+			return 0
+		}
+		if op > OP_16 {
+			return 0
+		}
+		pc = idx
+		subd = item
+	}
+	sub := NewScript(subd)
+	return sub.GetSigOpCount(true)
+}
+
+func (s Script) GetSigOpCount(accurate bool) int {
+	pc := 0
+	n := 0
+	lastop := byte(OP_INVALIDOPCODE)
+	for pc < s.Len() {
+		ok, idx, op, _ := s.GetOp(pc)
+		if !ok {
+			break
+		}
+		if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
+			n++
+		} else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
+			if accurate && lastop >= OP_1 && lastop <= OP_16 {
+				n += DecodeOP(lastop)
+			} else {
+				n += MAX_PUBKEYS_PER_MULTISIG
+			}
+		}
+		pc = idx
+		lastop = op
+	}
+	return n
+}
+
+func (s Script) IsPushOnly(idx int) (int, bool) {
+	for idx < s.Len() {
+		ok, pos, op, _ := s.GetOp(idx)
+		if !ok {
+			return idx, false
+		}
+		if op > OP_16 {
+			return idx, false
+		}
+		idx = pos
+	}
+	return idx, true
+}
+
+func (s Script) IsPayToWitnessScriptHash() bool {
+	return (s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20)
+}
+
 func (s Script) IsUnspendable() bool {
 	return (s.Len() > 0 && s[0] == OP_RETURN) || (s.Len() > MAX_SCRIPT_SIZE)
 }

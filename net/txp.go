@@ -6,6 +6,17 @@ import (
 	"encoding/hex"
 )
 
+const (
+	COIN      = Amount(100000000)
+	MAX_MONEY = Amount(21000000 * COIN)
+)
+
+type Amount int64
+
+func (a Amount) IsRange() bool {
+	return a >= 0 && a < MAX_MONEY
+}
+
 type HashID [32]byte
 
 func (h HashID) String() string {
@@ -155,6 +166,35 @@ type TX struct {
 	Ins      []*TxIn
 	Outs     []*TxOut
 	LockTime uint32
+}
+
+func (m *TX) IsFinal(blockHeight, blockTime int64) bool {
+	if m.LockTime == 0 {
+		return false
+	}
+	lt := int64(0)
+	if m.LockTime < script.LOCKTIME_THRESHOLD {
+		lt = blockHeight
+	} else {
+		lt = blockTime
+	}
+	if int64(m.LockTime) < lt {
+		return true
+	}
+	for _, v := range m.Ins {
+		if v.Sequence != script.SEQUENCE_FINAL {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *TX) GetValueOut() Amount {
+	tv := Amount(0)
+	for _, v := range m.Outs {
+		tv += Amount(v.Value)
+	}
+	return tv
 }
 
 func (m *TX) IsCoinBase() bool {
@@ -344,7 +384,7 @@ func NewMsgNotFound() *MsgNotFound {
 type MsgBlock struct {
 	Ver       uint32
 	Prev      HashID
-	Root      HashID //Merkle tree root
+	Merkle    HashID //Merkle tree root
 	Timestamp uint32
 	Bits      uint32
 	Nonce     uint32
@@ -359,7 +399,7 @@ func (m *MsgBlock) HashID() HashID {
 	buf := NewMsgBuffer([]byte{})
 	buf.WriteUInt32(m.Ver)
 	buf.WriteBytes(m.Prev[:])
-	buf.WriteBytes(m.Root[:])
+	buf.WriteBytes(m.Merkle[:])
 	buf.WriteUInt32(m.Timestamp)
 	buf.WriteUInt32(m.Bits)
 	buf.WriteUInt32(m.Nonce)
@@ -372,7 +412,7 @@ func (m *MsgBlock) HashID() HashID {
 func (m *MsgBlock) Read(h *NetHeader) {
 	m.Ver = h.ReadUInt32()
 	h.ReadBytes(m.Prev[:])
-	h.ReadBytes(m.Root[:])
+	h.ReadBytes(m.Merkle[:])
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
@@ -388,7 +428,7 @@ func (m *MsgBlock) Read(h *NetHeader) {
 func (m *MsgBlock) Write(h *NetHeader) {
 	h.WriteUInt32(m.Ver)
 	h.WriteBytes(m.Prev[:])
-	h.WriteBytes(m.Root[:])
+	h.WriteBytes(m.Merkle[:])
 	h.WriteUInt32(m.Timestamp)
 	h.WriteUInt32(m.Bits)
 	h.WriteUInt32(m.Nonce)
