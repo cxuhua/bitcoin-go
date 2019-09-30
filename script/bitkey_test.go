@@ -1,7 +1,6 @@
 package script
 
 import (
-	"bitcoin/util"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
@@ -19,7 +18,7 @@ func TestSelf(t *testing.T) {
 	}
 	log.Println(a.x, a.y)
 
-	log.Println(util.DecompressY(a.x, uint(BigIntOdd(a.y))))
+	log.Println(DecompressY(a.x, uint(BigIntOdd(a.y))))
 
 	//dump := pri.Dump(true, true)
 	//np := &PrivateKey{}
