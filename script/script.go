@@ -306,7 +306,7 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 			if fbMini && !CheckMinimalPush(ops, op) {
 				return false, SCRIPT_ERR_MINIMALDATA
 			}
-			log.Println("PUSH:", hex.EncodeToString(ops))
+			log.Println(string(ops), op, hex.EncodeToString(ops))
 			stack.Push(ops)
 		} else if fexec || (OP_IF <= op && op <= OP_ENDIF) {
 			switch op {
@@ -358,16 +358,16 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 					if stack.Len() < 1 {
 						return false, SCRIPT_ERR_UNBALANCED_CONDITIONAL
 					}
-					vch := stack.Top(-1).ToBytes()
+					vch := stack.Top(-1)
 					if sigver == SIG_VER_WITNESS_V0 && flags&SCRIPT_VERIFY_MINIMALIF != 0 {
-						if len(vch) > 1 {
+						if vch.Len() > 1 {
 							return false, SCRIPT_ERR_MINIMALIF
 						}
-						if len(vch) == 1 && vch[0] != 1 {
+						if vch.Len() == 1 && vch[0] != 1 {
 							return false, SCRIPT_ERR_MINIMALIF
 						}
 					}
-					fValue = CastToBool(vch)
+					fValue = vch.ToBool()
 					if op == OP_NOTIF {
 						fValue = !fValue
 					}
@@ -847,7 +847,6 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 			if stack.Len()+alts.Len() > MAX_STACK_SIZE {
 				return false, SCRIPT_ERR_STACK_SIZE
 			}
-
 		}
 	}
 	if !vfExec.Empty() {

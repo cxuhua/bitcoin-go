@@ -3,6 +3,7 @@ package net
 import (
 	"bitcoin/script"
 	"encoding/binary"
+	"errors"
 	"io"
 )
 
@@ -10,34 +11,59 @@ var (
 	ByteOrder = binary.LittleEndian
 )
 
+const (
+	MSG_BUFFER_READ  = 0x1
+	MSG_BUFFER_WRITE = 0x2
+	MSG_BUFFER_RW    = MSG_BUFFER_READ | MSG_BUFFER_WRITE
+	MSG_BUFFER_MAX   = MAX_BLOCK_SERIALIZED_SIZE
+)
+
 type MsgBuffer struct {
 	Payload []byte //payload raw data
 	io.ReadWriteSeeker
-	rpos int
-	wpos int
+	rwpos  int
+	rwflag int
 }
 
-func NewMsgBuffer(b []byte) *MsgBuffer {
+func NewMsgBuffer(b []byte, rw int) *MsgBuffer {
+	if rw == MSG_BUFFER_RW {
+		panic(errors.New("msgbuffer not support rw"))
+	}
+	if len(b) > int(MSG_BUFFER_MAX) {
+		panic(SizeError)
+	}
 	m := &MsgBuffer{}
 	m.Payload = b
-	m.rpos = 0
-	m.wpos = 0
+	m.rwpos = 0
+	m.rwflag = rw
 	return m
 }
 
+func (m *MsgBuffer) IsRead() bool {
+	return m.rwflag&MSG_BUFFER_READ != 0
+}
+
+func (m *MsgBuffer) IsWrite() bool {
+	return m.rwflag&MSG_BUFFER_WRITE != 0
+}
+
+func (m *MsgBuffer) Pos() int {
+	return m.rwpos
+}
+
 func (m *MsgBuffer) IsEOF() bool {
-	return m.rpos == len(m.Payload)
+	return m.rwpos == len(m.Payload)
 }
 
 func (m *MsgBuffer) Read(p []byte) (n int, err error) {
-	if m.rpos+len(p) > len(m.Payload) {
+	if m.rwpos+len(p) > len(m.Payload) {
 		return 0, io.EOF
 	}
 	if len(p) == 0 {
 		return 0, nil
 	}
-	copy(p, m.Payload[m.rpos:m.rpos+len(p)])
-	m.rpos += len(p)
+	copy(p, m.Payload[m.rwpos:m.rwpos+len(p)])
+	m.rwpos += len(p)
 	return len(p), nil
 }
 
@@ -47,39 +73,39 @@ func (m *MsgBuffer) Write(p []byte) (n int, err error) {
 		return 0, nil
 	}
 	m.Payload = append(m.Payload, p...)
-	m.wpos += l
+	m.rwpos += l
 	return l, nil
 }
 
 func (m *MsgBuffer) Seek(offset int64, whence int) (int64, error) {
 	if whence == io.SeekStart {
-		m.rpos = int(offset)
-		m.wpos = int(offset)
+		m.rwpos = int(offset)
+		m.rwpos = int(offset)
 	} else if whence == io.SeekCurrent {
-		m.rpos += int(offset)
-		m.wpos += int(offset)
+		m.rwpos += int(offset)
+		m.rwpos += int(offset)
 	} else {
-		m.rpos = len(m.Payload) + int(offset)
-		m.wpos = len(m.Payload) + int(offset)
+		m.rwpos = len(m.Payload) + int(offset)
+		m.rwpos = len(m.Payload) + int(offset)
 	}
-	if m.rpos >= len(m.Payload) {
+	if m.rwpos >= len(m.Payload) {
 		return 0, io.EOF
 	}
 	return 0, nil
 }
 
 func (b *MsgBuffer) Skip(l int) {
-	if b.rpos+l > len(b.Payload) {
+	if b.rwpos+l > len(b.Payload) {
 		panic(io.EOF)
 	}
-	b.rpos += l
+	b.rwpos += l
 }
 
 func (b *MsgBuffer) Peek(l int) []byte {
-	if b.rpos+l > len(b.Payload) {
+	if b.rwpos+l > len(b.Payload) {
 		panic(io.EOF)
 	}
-	return b.Payload[b.rpos : b.rpos+l]
+	return b.Payload[b.rwpos : b.rwpos+l]
 }
 
 func (b *MsgBuffer) Bytes() []byte {

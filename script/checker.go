@@ -8,13 +8,6 @@ const (
 	SEQUENCE_LOCKTIME_GRANULARITY  = 9
 )
 
-const (
-	PUBLIC_KEY_SIZE            = 65
-	COMPRESSED_PUBLIC_KEY_SIZE = 33
-	SIGNATURE_SIZE             = 72
-	COMPACT_SIGNATURE_SIZE     = 65
-)
-
 type SigVersion uint
 
 type SigChecker interface {

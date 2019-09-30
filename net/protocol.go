@@ -66,14 +66,14 @@ const (
 )
 
 const (
-	REJECT_MALFORMED       = 0x01
-	REJECT_INVALID         = 0x10
-	REJECT_OBSOLETE        = 0x11
-	REJECT_DUPLICATE       = 0x12
-	REJECT_NONSTANDARD     = 0x40
-	REJECT_DUST            = 0x41
-	REJECT_INSUFFICIENTFEE = 0x42
-	REJECT_CHECKPOINT      = 0x43
+	REJECT_MALFORMED       = byte(0x01)
+	REJECT_INVALID         = byte(0x10)
+	REJECT_OBSOLETE        = byte(0x11)
+	REJECT_DUPLICATE       = byte(0x12)
+	REJECT_NONSTANDARD     = byte(0x40)
+	REJECT_DUST            = byte(0x41)
+	REJECT_INSUFFICIENTFEE = byte(0x42)
+	REJECT_CHECKPOINT      = byte(0x43)
 )
 
 const (
@@ -82,6 +82,18 @@ const (
 	MSG_BLOCK          = 2
 	MSG_FILTERED_BLOCK = 3
 	MSG_CMPCT_BLOCK    = 4
+)
+
+const (
+	MAX_BLOCK_SERIALIZED_SIZE           = uint(4000000)
+	MAX_BLOCK_WEIGHT                    = uint(4000000)
+	MAX_BLOCK_SIGOPS_COST               = int64(80000)
+	COINBASE_MATURITY                   = 100
+	WITNESS_SCALE_FACTOR                = 4
+	MIN_TRANSACTION_WEIGHT              = WITNESS_SCALE_FACTOR * 60
+	MIN_SERIALIZABLE_TRANSACTION_WEIGHT = WITNESS_SCALE_FACTOR * 10
+	LOCKTIME_VERIFY_SEQUENCE            = uint(1 << 0)
+	LOCKTIME_MEDIAN_TIME_PAST           = uint(1 << 1)
 )
 
 var (
@@ -102,13 +114,27 @@ type NetHeader struct {
 	Ver      uint32 //4 data source server app version
 }
 
-func NewNetHeader(cmd string, b []byte) *NetHeader {
+//read  rwd = string
+//write rwd = []byte
+//default
+func NewNetHeader(rwds ...interface{}) *NetHeader {
 	m := &NetHeader{}
+	if len(rwds) == 0 {
+		m.Command = NMT_UNKNNOW
+		m.MsgBuffer = NewMsgBuffer([]byte{}, MSG_BUFFER_WRITE)
+	} else if av, ok := rwds[0].([]byte); ok {
+		m.Command = NMT_UNKNNOW
+		m.MsgBuffer = NewMsgBuffer(av, MSG_BUFFER_READ)
+	} else if av, ok := rwds[0].(string); ok {
+		m.Command = av
+		m.MsgBuffer = NewMsgBuffer([]byte{}, MSG_BUFFER_WRITE)
+	} else {
+		m.Command = NMT_UNKNNOW
+		m.MsgBuffer = NewMsgBuffer([]byte{}, MSG_BUFFER_WRITE)
+	}
 	conf := config.GetConfig()
 	m.Ver = PROTOCOL_VERSION
 	m.Start = conf.MsgStart
-	m.Command = cmd
-	m.MsgBuffer = NewMsgBuffer(b)
 	return m
 }
 
@@ -150,7 +176,7 @@ func (h *NetHeader) Full(mp MsgIO) {
 
 //read package
 func ReadMsg(r io.Reader) (*NetHeader, error) {
-	h := NewNetHeader(NMT_BLOCK, []byte{})
+	h := NewNetHeader(MSG_BUFFER_READ)
 	if err := h.ReadHeader(r); err != nil {
 		return nil, err
 	}
@@ -167,7 +193,7 @@ func ReadMsg(r io.Reader) (*NetHeader, error) {
 }
 
 func ToMessageBytes(w MsgIO) ([]byte, error) {
-	m := NewNetHeader(w.Command(), []byte{})
+	m := NewNetHeader(w.Command())
 	//full payload
 	w.Write(m)
 	//get send bytes

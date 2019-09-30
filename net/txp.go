@@ -3,7 +3,10 @@ package net
 import (
 	"bitcoin/script"
 	"bitcoin/util"
+	"bytes"
+	"encoding/binary"
 	"encoding/hex"
+	"fmt"
 )
 
 const (
@@ -20,7 +23,13 @@ func (a Amount) IsRange() bool {
 type HashID [32]byte
 
 func (h HashID) String() string {
-	return hex.EncodeToString(h[:])
+	sv := h.Swap()
+	return hex.EncodeToString(sv[:])
+}
+
+func (b HashID) IsZero() bool {
+	bz := make([]byte, len(b))
+	return bytes.Equal(b[:], bz)
 }
 
 func (b HashID) Swap() HashID {
@@ -64,7 +73,7 @@ func (m *Inventory) Write(h *NetHeader) {
 type BHeader struct {
 	Ver       uint32
 	Prev      HashID
-	Root      HashID //Merkle tree root
+	Merkle    HashID //Merkle tree root
 	Timestamp uint32
 	Bits      uint32
 	Nonce     uint32
@@ -74,7 +83,7 @@ type BHeader struct {
 func (m *BHeader) Read(h *NetHeader) {
 	m.Ver = h.ReadUInt32()
 	h.ReadBytes(m.Prev[:])
-	h.ReadBytes(m.Root[:])
+	h.ReadBytes(m.Merkle[:])
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
@@ -84,26 +93,11 @@ func (m *BHeader) Read(h *NetHeader) {
 func (m *BHeader) Write(h *NetHeader) {
 	h.WriteUInt32(m.Ver)
 	h.WriteBytes(m.Prev[:])
-	h.WriteBytes(m.Root[:])
+	h.WriteBytes(m.Merkle[:])
 	h.WriteUInt32(m.Timestamp)
 	h.WriteUInt32(m.Bits)
 	h.WriteUInt32(m.Nonce)
 	h.WriteVarInt(m.Count)
-}
-
-type TxOutPoint struct {
-	Hash  HashID
-	Index uint32
-}
-
-func (m *TxOutPoint) Read(h *NetHeader) {
-	h.ReadBytes(m.Hash[:])
-	m.Index = h.ReadUInt32()
-}
-
-func (m *TxOutPoint) Write(h *NetHeader) {
-	h.WriteBytes(m.Hash[:])
-	h.WriteUInt32(m.Index)
 }
 
 type TxOut struct {
@@ -122,20 +116,30 @@ func (m *TxOut) Write(h *NetHeader) {
 }
 
 type TxIn struct {
-	Output   TxOutPoint
+	OutHash  HashID
+	OutIndex uint32
 	Script   *script.Script
 	Sequence uint32
 	Witness  *TxWitnesses
 }
 
+func (m *TxIn) OutBytes() []byte {
+	buf := &bytes.Buffer{}
+	binary.Write(buf, ByteOrder, m.OutHash[:])
+	binary.Write(buf, ByteOrder, m.OutIndex)
+	return buf.Bytes()
+}
+
 func (m *TxIn) Read(h *NetHeader) {
-	m.Output.Read(h)
+	h.ReadBytes(m.OutHash[:])
+	m.OutIndex = h.ReadUInt32()
 	m.Script = h.ReadScript()
 	m.Sequence = h.ReadUInt32()
 }
 
 func (m *TxIn) Write(h *NetHeader) {
-	m.Output.Write(h)
+	h.WriteBytes(m.OutHash[:])
+	h.WriteUInt32(m.OutIndex)
 	h.WriteScript(m.Script)
 	h.WriteUInt32(m.Sequence)
 }
@@ -160,12 +164,145 @@ func (m *TxWitnesses) Write(h *NetHeader) {
 	}
 }
 
+const (
+	INVALID_REASON_NONE = iota
+	INVALID_REASON_CONSENSUS
+	INVALID_REASON_RECENT_CONSENSUS_CHANGE
+	INVALID_REASON_CACHED_INVALID
+	INVALID_REASON_BLOCK_INVALID_HEADER
+	INVALID_REASON_BLOCK_MUTATED
+	INVALID_REASON_BLOCK_MISSING_PREV
+	INVALID_REASON_BLOCK_INVALID_PREV
+	INVALID_REASON_BLOCK_TIME_FUTURE
+	INVALID_REASON_BLOCK_CHECKPOINT
+	INVALID_REASON_TX_NOT_STANDARD
+	INVALID_REASON_TX_MISSING_INPUTS
+	INVALID_REASON_TX_PREMATURE_SPEND
+	INVALID_REASON_TX_WITNESS_MUTATED
+	INVALID_REASON_TX_CONFLICT
+	INVALID_REASON_TX_MEMPOOL_POLICY
+)
+
+func IsTransactionReason(r int) bool {
+	return r == INVALID_REASON_NONE ||
+		r == INVALID_REASON_CONSENSUS ||
+		r == INVALID_REASON_RECENT_CONSENSUS_CHANGE ||
+		r == INVALID_REASON_TX_NOT_STANDARD ||
+		r == INVALID_REASON_TX_PREMATURE_SPEND ||
+		r == INVALID_REASON_TX_MISSING_INPUTS ||
+		r == INVALID_REASON_TX_WITNESS_MUTATED ||
+		r == INVALID_REASON_TX_CONFLICT ||
+		r == INVALID_REASON_TX_MEMPOOL_POLICY
+}
+
+func IsBlockReason(r int) bool {
+	return r == INVALID_REASON_NONE ||
+		r == INVALID_REASON_CONSENSUS ||
+		r == INVALID_REASON_RECENT_CONSENSUS_CHANGE ||
+		r == INVALID_REASON_CACHED_INVALID ||
+		r == INVALID_REASON_BLOCK_INVALID_HEADER ||
+		r == INVALID_REASON_BLOCK_MUTATED ||
+		r == INVALID_REASON_BLOCK_MISSING_PREV ||
+		r == INVALID_REASON_BLOCK_INVALID_PREV ||
+		r == INVALID_REASON_BLOCK_TIME_FUTURE ||
+		r == INVALID_REASON_BLOCK_CHECKPOINT
+}
+
+type ValidationError struct {
+	reason int
+	reject byte
+	err    string
+}
+
+func (v *ValidationError) Reject() byte {
+	return v.reject
+}
+
+func (v *ValidationError) Error() string {
+	return fmt.Sprintf("reason=%d reject=%d err=%s", v.reason, v.reject, v.err)
+}
+
+func NewValidationError(reason int, reject byte, err string) *ValidationError {
+	return &ValidationError{
+		reason: reason,
+		reject: reject,
+		err:    err,
+	}
+}
+
+/**
+ * Basic TX serialization format:
+ * - int32_t nVersion
+ * - std::vector<CTxIn> vin
+ * - std::vector<CTxOut> vout
+ * - uint32_t nLockTime
+ *
+ * Extended TX serialization format:
+ * - int32_t nVersion
+ * - unsigned char dummy = 0x00
+ * - unsigned char flags (!= 0)
+ * - std::vector<CTxIn> vin
+ * - std::vector<CTxOut> vout
+ * - if (flags & 1):
+ *   - CTxWitness wit;
+ * - uint32_t nLockTime
+ */
 type TX struct {
 	Ver      int32
 	Flag     []byte //If present, always 0001
 	Ins      []*TxIn
 	Outs     []*TxOut
 	LockTime uint32
+	wbpos    int //witness wpos begin
+	wepos    int //witness wpos end
+}
+
+func (m *TX) Check(h *NetHeader, checkDupIn bool) error {
+	if len(m.Ins) == 0 {
+		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vin-empty")
+	}
+	if len(m.Outs) == 0 {
+		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-outs-empty")
+	}
+	if uint(h.Pos()-m.WitnessesLen())*WITNESS_SCALE_FACTOR > MAX_BLOCK_WEIGHT {
+		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-oversize")
+	}
+	vout := Amount(0)
+	for _, v := range m.Outs {
+		if v.Value < 0 {
+			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vout-negative")
+		}
+		if Amount(v.Value) > MAX_MONEY {
+			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vout-toolarge")
+		}
+		vout += Amount(v.Value)
+		if !vout.IsRange() {
+			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-txouttotal-toolarge")
+		}
+	}
+	if checkDupIn {
+		inos := util.NewBytesArray()
+		for _, v := range m.Ins {
+			vbs := v.OutBytes()
+			if inos.Has(vbs) {
+				return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-inputs-duplicate")
+			}
+			inos.Append(vbs)
+		}
+		inos = nil
+	}
+	if m.IsCoinBase() {
+		if m.Ins[0].Script.Len() < 2 || m.Ins[0].Script.Len() > 100 {
+			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-cb-length")
+		}
+	} else {
+		for _, v := range m.Ins {
+			if v.OutHash.IsZero() {
+				return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-prevout-null")
+			}
+		}
+	}
+	return nil
 }
 
 func (m *TX) IsFinal(blockHeight, blockTime int64) bool {
@@ -196,9 +333,27 @@ func (m *TX) GetValueOut() Amount {
 	}
 	return tv
 }
+func (m *TX) HashID() HashID {
+	//not include witnesses
+	h := NewNetHeader()
+	h.WriteUInt32(uint32(m.Ver))
+	h.WriteVarInt(uint64(len(m.Ins)))
+	for _, v := range m.Ins {
+		v.Write(h)
+	}
+	h.WriteVarInt(uint64(len(m.Outs)))
+	for _, v := range m.Outs {
+		v.Write(h)
+	}
+	h.WriteUInt32(m.LockTime)
+	hid := util.HASH256(h.Bytes())
+	id := HashID{}
+	copy(id[:], hid)
+	return id
+}
 
 func (m *TX) IsCoinBase() bool {
-	panic("Not Imp")
+	return len(m.Ins) > 0 && m.Ins[0].OutHash.IsZero()
 }
 
 func (m *TX) HasFlag() bool {
@@ -206,11 +361,13 @@ func (m *TX) HasFlag() bool {
 }
 
 func (m *TX) ReadWitnesses(h *NetHeader) {
+	m.wbpos = h.Pos()
 	for i, _ := range m.Ins {
 		v := &TxWitnesses{}
 		v.Read(h)
 		m.Ins[i].Witness = v
 	}
+	m.wepos = h.Pos()
 }
 
 func (m *TX) Read(h *NetHeader) {
@@ -250,13 +407,19 @@ func (m *TX) HasWitness() bool {
 	return true
 }
 
+func (m *TX) WitnessesLen() int {
+	return m.wepos - m.wbpos
+}
+
 func (m *TX) WriteWitnesses(h *NetHeader) {
+	m.wbpos = h.Pos()
 	for _, v := range m.Ins {
 		if v.Witness == nil {
 			continue
 		}
 		v.Witness.Write(h)
 	}
+	m.wepos = h.Pos()
 }
 
 func (m *TX) Write(h *NetHeader) {
@@ -396,7 +559,7 @@ func (m *MsgBlock) Command() string {
 }
 
 func (m *MsgBlock) HashID() HashID {
-	buf := NewMsgBuffer([]byte{})
+	buf := NewMsgBuffer([]byte{}, MSG_BUFFER_WRITE)
 	buf.WriteUInt32(m.Ver)
 	buf.WriteBytes(m.Prev[:])
 	buf.WriteBytes(m.Merkle[:])

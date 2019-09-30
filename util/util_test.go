@@ -2,26 +2,56 @@ package util
 
 import (
 	"encoding/hex"
-	"log"
 	"testing"
 )
 
-func TestMakeAddress(t *testing.T) {
+func TestMakePublicToAddress(t *testing.T) {
 	s, err := hex.DecodeString("0450863AD64A87AE8A2FE83C1AF1A8403CB53F53E486D8511DAD8A04887E5B23522CD470243453A299FA9E77237716103ABC11A1DF38855ED6F2EE187E9C582BA6")
 	if err != nil {
 		panic(err)
 	}
-	addr := MakeAddress(s)
+	addr := P2PKHAddress(s)
 	if addr != "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM" {
 		t.Error("MakeAddress error")
 	}
 }
 
+func TestMakePKHAddress(t *testing.T) {
+	s, err := hex.DecodeString("a896db19ae4746d8862fcdd7cb886ca5765296e8")
+	if err != nil {
+		panic(err)
+	}
+	addr := P2PKHAddress(s)
+	if addr != "1GNREsqR6D3Sfo2CVScS1SDFBuzLJGs8WQ" {
+		t.Error("MakeAddress error")
+	}
+}
+
+func TestLongAddress(t *testing.T) {
+	s, err := hex.DecodeString("04678afdb0fe5548271967f1a67130b7105cd6a828e03909a67962e0ea1f61deb649f6bc3f4cef38c4f35504e51ec112de5c384df7ba0b8d578a4c702b6bf11d5f")
+	if err != nil {
+		panic(err)
+	}
+	addr := P2PKHAddress(s)
+	if addr != "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" {
+		t.Errorf("TestLongAddress error %s", addr)
+	}
+}
 func TestAddress(t *testing.T) {
 	s, err := hex.DecodeString("8fd139bb39ced713f231c58a4d07bf6954d1c201")
 	if err != nil {
 		panic(err)
 	}
-	addr := MakeAddress(s)
-	log.Println(addr)
+	addr := P2PKHAddress(s)
+	if addr != "1E7SGgAZFCHDnVZLuRViX3gUmxpMfdvd2o" {
+		t.Errorf("TestAddress error %s", addr)
+	}
+}
+
+func TestP2SHAddress(t *testing.T) {
+	data := HexDecode("52_21_0293baf0397588acc1aba056e868fd188dc0eea7554b45370aae862f9d2493a4c1_21_020ab7517cf22a46b503ee8dcae7f9f109ec4cd19f0ab9d77c89c607554f3d5aa9_52_ae")
+	addr := P2SHAddress(data)
+	if addr != "3Ae2TYfyHvwH11pUy6HaK7rBYn9GfGZ3Fk" {
+		t.Errorf("P2SHAddress error %s", addr)
+	}
 }
