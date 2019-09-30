@@ -33,9 +33,7 @@ func TestMakePubKey(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	v := elliptic.Marshal(elliptic.P256(), privateKey.X, privateKey.Y)
-	x, y := elliptic.Unmarshal(elliptic.P256(), v)
-	log.Println(len(v), len(x.Bytes()), len(y.Bytes()), len(privateKey.D.Bytes()))
+
 	msg := "hello, world"
 	hash := sha256.Sum256([]byte(msg))
 
