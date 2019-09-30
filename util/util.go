@@ -3,6 +3,7 @@ package util
 import (
 	"crypto/rand"
 	"encoding/binary"
+	"encoding/hex"
 	"net"
 	"strconv"
 	"strings"
@@ -25,8 +26,35 @@ func ParseAddr(addr string) (net.IP, uint16) {
 	return ip, port
 }
 
-func MakeAddress(pk []byte) string {
-	a := HASH160(pk)
+func HexToBytes(s string) []byte {
+	d, err := hex.DecodeString(s)
+	if err != nil {
+		panic(err)
+	}
+	return d
+}
+
+func P2SHAddress(pk []byte) string {
+	var a []byte = nil
+	if len(pk) == 20 {
+		a = pk
+	} else {
+		a = HASH160(pk)
+	}
+	b := []byte{5}
+	b = append(b, a...)
+	c := HASH256(b)
+	b = append(b, c[:4]...)
+	return B58Encode(b, BitcoinAlphabet)
+}
+
+func P2PKHAddress(pk []byte) string {
+	var a []byte = nil
+	if len(pk) == 20 {
+		a = pk
+	} else {
+		a = HASH160(pk)
+	}
 	b := []byte{0}
 	b = append(b, a...)
 	c := HASH256(b)

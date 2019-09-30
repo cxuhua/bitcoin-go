@@ -102,7 +102,24 @@ type NetHeader struct {
 	Ver      uint32 //4 data source server app version
 }
 
-func NewNetHeader(cmd string, b []byte) *NetHeader {
+//cmd buf
+//cmd
+///
+func NewNetHeader(arg ...interface{}) *NetHeader {
+	cmd := NMT_UNKNNOW
+	b := []byte{}
+	if len(arg) == 1 {
+		switch arg[0].(type) {
+		case string:
+			cmd = arg[0].(string)
+		case []byte:
+			b = arg[0].([]byte)
+		default:
+			panic(errors.New("arg[0] error"))
+		}
+	} else if len(arg) > 1 {
+		panic(errors.New("arg length error"))
+	}
 	m := &NetHeader{}
 	conf := config.GetConfig()
 	m.Ver = PROTOCOL_VERSION
@@ -150,7 +167,7 @@ func (h *NetHeader) Full(mp MsgIO) {
 
 //read package
 func ReadMsg(r io.Reader) (*NetHeader, error) {
-	h := NewNetHeader(NMT_BLOCK, []byte{})
+	h := NewNetHeader(NMT_BLOCK)
 	if err := h.ReadHeader(r); err != nil {
 		return nil, err
 	}
@@ -167,7 +184,7 @@ func ReadMsg(r io.Reader) (*NetHeader, error) {
 }
 
 func ToMessageBytes(w MsgIO) ([]byte, error) {
-	m := NewNetHeader(w.Command(), []byte{})
+	m := NewNetHeader(w.Command())
 	//full payload
 	w.Write(m)
 	//get send bytes

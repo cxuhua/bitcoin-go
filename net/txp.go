@@ -3,13 +3,20 @@ package net
 import (
 	"bitcoin/script"
 	"bitcoin/util"
+	"bytes"
 	"encoding/hex"
 )
 
 type HashID [32]byte
 
 func (h HashID) String() string {
-	return hex.EncodeToString(h[:])
+	sv := h.Swap()
+	return hex.EncodeToString(sv[:])
+}
+
+func (b HashID) IsZero() bool {
+	bz := make([]byte, len(b))
+	return bytes.Equal(b[:], bz)
 }
 
 func (b HashID) Swap() HashID {
@@ -53,7 +60,7 @@ func (m *Inventory) Write(h *NetHeader) {
 type BHeader struct {
 	Ver       uint32
 	Prev      HashID
-	Root      HashID //Merkle tree root
+	Merkle    HashID //Merkle tree root
 	Timestamp uint32
 	Bits      uint32
 	Nonce     uint32
@@ -63,7 +70,7 @@ type BHeader struct {
 func (m *BHeader) Read(h *NetHeader) {
 	m.Ver = h.ReadUInt32()
 	h.ReadBytes(m.Prev[:])
-	h.ReadBytes(m.Root[:])
+	h.ReadBytes(m.Merkle[:])
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
@@ -73,7 +80,7 @@ func (m *BHeader) Read(h *NetHeader) {
 func (m *BHeader) Write(h *NetHeader) {
 	h.WriteUInt32(m.Ver)
 	h.WriteBytes(m.Prev[:])
-	h.WriteBytes(m.Root[:])
+	h.WriteBytes(m.Merkle[:])
 	h.WriteUInt32(m.Timestamp)
 	h.WriteUInt32(m.Bits)
 	h.WriteUInt32(m.Nonce)
@@ -157,8 +164,27 @@ type TX struct {
 	LockTime uint32
 }
 
+func (m *TX) HashID() HashID {
+	//not include witnesses
+	h := NewNetHeader()
+	h.WriteUInt32(uint32(m.Ver))
+	h.WriteVarInt(uint64(len(m.Ins)))
+	for _, v := range m.Ins {
+		v.Write(h)
+	}
+	h.WriteVarInt(uint64(len(m.Outs)))
+	for _, v := range m.Outs {
+		v.Write(h)
+	}
+	h.WriteUInt32(m.LockTime)
+	hid := util.HASH256(h.Bytes())
+	id := HashID{}
+	copy(id[:], hid)
+	return id
+}
+
 func (m *TX) IsCoinBase() bool {
-	panic("Not Imp")
+	return len(m.Ins) > 0 && m.Ins[0].Output.Hash.IsZero()
 }
 
 func (m *TX) HasFlag() bool {
@@ -344,7 +370,7 @@ func NewMsgNotFound() *MsgNotFound {
 type MsgBlock struct {
 	Ver       uint32
 	Prev      HashID
-	Root      HashID //Merkle tree root
+	Merkle    HashID //Merkle tree root
 	Timestamp uint32
 	Bits      uint32
 	Nonce     uint32
@@ -359,7 +385,7 @@ func (m *MsgBlock) HashID() HashID {
 	buf := NewMsgBuffer([]byte{})
 	buf.WriteUInt32(m.Ver)
 	buf.WriteBytes(m.Prev[:])
-	buf.WriteBytes(m.Root[:])
+	buf.WriteBytes(m.Merkle[:])
 	buf.WriteUInt32(m.Timestamp)
 	buf.WriteUInt32(m.Bits)
 	buf.WriteUInt32(m.Nonce)
@@ -372,7 +398,7 @@ func (m *MsgBlock) HashID() HashID {
 func (m *MsgBlock) Read(h *NetHeader) {
 	m.Ver = h.ReadUInt32()
 	h.ReadBytes(m.Prev[:])
-	h.ReadBytes(m.Root[:])
+	h.ReadBytes(m.Merkle[:])
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
@@ -388,7 +414,7 @@ func (m *MsgBlock) Read(h *NetHeader) {
 func (m *MsgBlock) Write(h *NetHeader) {
 	h.WriteUInt32(m.Ver)
 	h.WriteBytes(m.Prev[:])
-	h.WriteBytes(m.Root[:])
+	h.WriteBytes(m.Merkle[:])
 	h.WriteUInt32(m.Timestamp)
 	h.WriteUInt32(m.Bits)
 	h.WriteUInt32(m.Nonce)
