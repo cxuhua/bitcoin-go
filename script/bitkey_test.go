@@ -4,6 +4,7 @@ import (
 	"bitcoin/util"
 	"bytes"
 	"encoding/hex"
+	"log"
 	"testing"
 )
 
@@ -79,9 +80,15 @@ const (
 	addr2       = "1F5y5E5FMc5YzdJtB9hLaUe43GDxEKXENJ"
 	addr1C      = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs"
 	addr2C      = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs"
+	mine        = "KzuLBpfbi8gQ2XCFK6SHFiwVqgTsQDEu14EbwAictnG6cBit566Y"
 )
 
 func TestBase58Key(t *testing.T) {
+	mpk, err := DecodePrivateKey(mine)
+	if err != nil {
+		panic(err)
+	}
+	log.Println(mpk.PublicKey())
 	pk1, err := DecodePrivateKey(strSecret1)
 	if err != nil {
 		t.Errorf("DecodePrivateKey error %v", err)
