@@ -108,9 +108,10 @@ func LoadPrivateKey(d []byte) (*PrivateKey, error) {
 	return p, nil
 }
 
-func (pk PrivateKey) Sign(hash []byte) (SigValue, error) {
+func (pk PrivateKey) Sign(hash []byte) (*SigValue, error) {
+	sig := &SigValue{}
 	priv := new(ecdsa.PrivateKey)
-	priv.PublicKey.Curve = curve
+	priv.Curve = curve
 	priv.D = pk.D
 	pub := pk.PublicKey()
 	priv.X, priv.Y = pub.X, pub.Y
@@ -118,9 +119,8 @@ func (pk PrivateKey) Sign(hash []byte) (SigValue, error) {
 	if err != nil {
 		return nil, err
 	}
-	ret := r.Bytes()
-	ret = append(ret, s.Bytes()...)
-	return ret, nil
+	sig.R, sig.S = r, s
+	return sig, nil
 }
 
 func (pk PrivateKey) Marshal() []byte {
@@ -134,14 +134,20 @@ func (pk PrivateKey) PublicKey() *PublicKey {
 	return pp
 }
 
-type SigValue []byte
+type SigValue struct {
+	R *big.Int
+	S *big.Int
+}
 
 //secp256k1_ecdsa_sig_serialize
-func (s SigValue) Marshal() []byte {
+func (sig SigValue) Marshal() []byte {
+	if sig.R == nil || sig.S == nil {
+		panic(errors.New("null sig value"))
+	}
 	return nil
 }
 
-func (s *SigValue) Unmarshal(b []byte) error {
+func (sig *SigValue) Unmarshal(b []byte) error {
 	return nil
 }
 
@@ -233,16 +239,11 @@ func IsValidPublicKey(pk []byte) bool {
 	return len(pk) > 0 && GetPubKeyLen(pk[0]) == len(pk)
 }
 
-func (pk *PublicKey) Verify(hash []byte, sig []byte) bool {
-	if len(sig) != (curve.Params().BitSize/8)*2 {
-		return false
-	}
+func (pk *PublicKey) Verify(hash []byte, sig *SigValue) bool {
 	pub := new(ecdsa.PublicKey)
 	pub.Curve = curve
 	pub.X, pub.Y = pk.X, pk.Y
-	r := new(big.Int).SetBytes(sig[:32])
-	s := new(big.Int).SetBytes(sig[32:])
-	return ecdsa.Verify(pub, hash, r, s)
+	return ecdsa.Verify(pub, hash, sig.R, sig.S)
 }
 
 func (pk *PublicKey) Hybrid() []byte {
