@@ -60,12 +60,9 @@ func GetConfig() *Config {
 	if config != nil {
 		return config
 	}
-	c := &Config{}
+	c := &Config{Id: "main"}
 
 	c.b58prefixs = map[int][]byte{}
-
-	c.Id = "main"
-
 	c.MsgStart = []byte{0xF9, 0xBE, 0xB4, 0xD9}
 
 	c.Seeds = []string{

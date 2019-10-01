@@ -17,17 +17,25 @@ const (
 	LOCKTIME_THRESHOLD       = 500000000
 	LOCKTIME_MAX             = uint32(0xFFFFFFFF)
 )
+const (
+	PT_P2PK = iota
+	PT_P2PKH
+	PT_P2SH
+	PT_P2WSH
+	PT_P2WKH
+	PT_MULTISIG
+)
 
 const (
-	TX_NONSTANDARD = iota
-	TX_PUBKEY
-	TX_PUBKEYHASH
-	TX_SCRIPTHASH
-	TX_MULTISIG
-	TX_NULL_DATA
-	TX_WITNESS_V0_SCRIPTHASH
-	TX_WITNESS_V0_KEYHASH
-	TX_WITNESS_UNKNOWN
+	TX_NONSTANDARD           = iota
+	TX_PUBKEY                //Pay-to-key P2PK
+	TX_PUBKEYHASH            //Pay-to-key-Hash P2PKH
+	TX_SCRIPTHASH            //Pay-to-Script-Hash P2SH
+	TX_MULTISIG              //MULTISIG
+	TX_NULL_DATA             //
+	TX_WITNESS_V0_SCRIPTHASH //Pay-to-Witness-Script-Hash P2WSH
+	TX_WITNESS_V0_KEYHASH    //Pay-to-Witness-key-Hash P2WKH
+	TX_WITNESS_UNKNOWN       //
 )
 
 type OpCodeType byte

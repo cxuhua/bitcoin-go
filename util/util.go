@@ -43,6 +43,7 @@ func HexDecode(s string) []byte {
 	return d
 }
 
+//Pay-to-Script-Hash
 func P2SHAddress(pk []byte) string {
 	var a []byte = nil
 	if len(pk) == 20 {
@@ -57,6 +58,7 @@ func P2SHAddress(pk []byte) string {
 	return B58Encode(b, BitcoinAlphabet)
 }
 
+//Pay-to-Public-Key-Hash
 func P2PKHAddress(pk []byte) string {
 	var a []byte = nil
 	if len(pk) == 20 {

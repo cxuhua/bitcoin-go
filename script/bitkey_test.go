@@ -81,6 +81,7 @@ const (
 	addr1C      = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs"
 	addr2C      = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs"
 	mine        = "KzuLBpfbi8gQ2XCFK6SHFiwVqgTsQDEu14EbwAictnG6cBit566Y"
+	addrmine    = ""
 )
 
 func TestBase58Key(t *testing.T) {
@@ -88,7 +89,12 @@ func TestBase58Key(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	log.Println(mpk.PublicKey())
+	if mpk.Encode() != mine {
+		t.Errorf("encode private key error")
+	}
+	pub := mpk.PublicKey()
+	bb, err := GetP2SHPublicScript([]*PublicKey{pub}, 1)
+	log.Println(hex.EncodeToString(bb), util.P2SHAddress(bb))
 	pk1, err := DecodePrivateKey(strSecret1)
 	if err != nil {
 		t.Errorf("DecodePrivateKey error %v", err)
