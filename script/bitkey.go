@@ -1,13 +1,14 @@
 package script
 
 import (
+	"bitcoin/config"
 	"bitcoin/util"
 	"bytes"
 	"crypto/ecdsa"
-	"crypto/elliptic"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"math/big"
 )
 
@@ -26,7 +27,6 @@ const (
 
 var (
 	curve = util.SECP256K1()
-	one   = big.NewInt(1)
 )
 
 func GetPubKeyLen(header byte) int {
@@ -40,274 +40,230 @@ func GetPubKeyLen(header byte) int {
 }
 
 type PrivateKey struct {
-	curve elliptic.Curve
-	d     *big.Int
-	x     *big.Int
-	y     *big.Int
-	data  []byte
-}
-
-func (pk PrivateKey) HasPublic() bool {
-	cl := (curve.Params().BitSize + 7) >> 3
-	dl := len(pk.data)
-	return dl == cl+COMPRESSED_PUBLIC_KEY_SIZE || dl == cl+PUBLIC_KEY_SIZE
-}
-
-func (pk *PrivateKey) Load(b []byte) error {
-	cl := (curve.Params().BitSize + 7) >> 3
-	dl := len(b)
-	if dl < cl {
-		return errors.New("data size error")
-	}
-	pk.d = &big.Int{}
-	pk.d.SetBytes(b[:cl])
-	pk.curve = curve
-	pk.data = b
-	//not load public key
-	if pk.HasPublic() {
-		pb := b[cl:]
-		pub := &PublicKey{}
-		err := pub.Unmarshal(pb)
-		if err != nil {
-			return err
-		}
-		pk.x, pk.y = pub.x, pub.y
-	}
-	return nil
-}
-
-//include public
-func (pk PrivateKey) Dump(haspub bool, compressed bool) []byte {
-	b := pk.Marshal()
-	if !haspub {
-		return b
-	}
-	pb := pk.PublicKey()
-	if compressed {
-		pb = pb.Compress()
-	}
-	b = append(b, pb.Marshal()...)
-	return b
-}
-
-func DecompressY(x *big.Int, ybit uint) (*big.Int, error) {
-	c := curve.Params()
-
-	// y^2 = x^3 + b
-	// y   = sqrt(x^3 + b)
-	var y, x3b big.Int
-	x3b.Mul(x, x)
-	x3b.Mul(&x3b, x)
-	x3b.Add(&x3b, c.B)
-	x3b.Mod(&x3b, c.P)
-	y.ModSqrt(&x3b, c.P)
-
-	if y.Bit(0) != ybit {
-		y.Sub(c.P, &y)
-	}
-	if y.Bit(0) != ybit {
-		return nil, errors.New("incorrectly encoded X and Y bit")
-	}
-	return &y, nil
-}
-
-func (pk PrivateKey) String() string {
-	return pk.d.String()
-}
-
-func NewPrivateKey() (*PrivateKey, error) {
-	pk, err := ecdsa.GenerateKey(curve, rand.Reader)
-	if err != nil {
-		return nil, err
-	}
-	kv := &PrivateKey{
-		curve: curve,
-		d:     pk.D,
-		x:     pk.X,
-		y:     pk.Y,
-	}
-	kv.data = kv.Dump(true, false)
-	return kv, nil
-}
-
-func (pk *PrivateKey) Marshal() []byte {
-	if len(pk.data) == 0 {
-		pk.data = pk.d.Bytes()
-	}
-	return pk.data
-}
-
-func (pk *PrivateKey) PublicKey() *PublicKey {
-	return &PublicKey{
-		curve: pk.curve,
-		x:     pk.x,
-		y:     pk.y,
-	}
-}
-
-type PublicKey struct {
-	curve      elliptic.Curve
-	x          *big.Int
-	y          *big.Int
-	data       []byte
+	D          *big.Int
 	compressed bool
 }
 
-func (pk *PublicKey) String() string {
-	if len(pk.data) == 0 {
-		pk.data = elliptic.Marshal(pk.curve, pk.x, pk.y)
+func DecodePrivateKey(s string) (*PrivateKey, error) {
+	key, err := NewPrivateKey()
+	if err != nil {
+		return nil, err
 	}
-	return hex.EncodeToString(pk.data)
+	conf := config.GetConfig()
+	data, err := util.B58Decode(s, util.BitcoinAlphabet)
+	if err != nil {
+		return nil, err
+	}
+	if len(data) < 4 {
+		return nil, errors.New("size error")
+	}
+	prefix := conf.Base58Prefix(config.SECRET_KEY)
+	dl := len(data)
+	hv := util.HASH256(data[:dl-4])
+	if bytes.Equal(hv[:4], data[dl-4:]) {
+		data = data[:dl-4]
+	}
+	dl = len(data)
+	pl := len(prefix)
+	if (dl == pl+32 || (dl == pl+33 && data[dl-1] == 1)) && bytes.Equal(prefix, data[:pl]) {
+		compressed := dl == 33+pl
+		key.SetBytes(data[pl:pl+32], compressed)
+	}
+	return key, nil
 }
 
-func (pk *PublicKey) IsCompressed() bool {
+func (pk *PrivateKey) IsCompressed() bool {
 	return pk.compressed
 }
 
-func BigIntOdd(v *big.Int) byte {
-	z := big.NewInt(0).And(v, one)
-	return byte(z.Int64())
+func (pk *PrivateKey) IsValid() bool {
+	return pk.PublicKey().IsValid()
 }
 
-func (pk *PublicKey) Compress() *PublicKey {
-	pk.compressed = true
-	return pk
+func (pk *PrivateKey) SetBytes(b []byte, compressed bool) {
+	pk.compressed = compressed
+	pk.D = new(big.Int).SetBytes(b)
 }
 
-func (pk *PublicKey) Unmarshal(data []byte) error {
+func (pk PrivateKey) String() string {
+	return hex.EncodeToString(pk.D.Bytes())
+}
+
+func NewPrivateKey() (*PrivateKey, error) {
+	d, err := util.GenPrivateKey()
+	if err != nil {
+		return nil, err
+	}
+	return &PrivateKey{
+		D: d,
+	}, nil
+}
+
+func LoadPrivateKey(d []byte) (*PrivateKey, error) {
+	if len(d) != curve.Params().BitSize/8 {
+		return nil, errors.New("private size error")
+	}
+	p := &PrivateKey{}
+	p.D = new(big.Int).SetBytes(d)
+	return p, nil
+}
+
+func (pk PrivateKey) Sign(hash []byte) (SigValue, error) {
+	priv := new(ecdsa.PrivateKey)
+	priv.PublicKey.Curve = curve
+	priv.D = pk.D
+	pub := pk.PublicKey()
+	priv.X, priv.Y = pub.X, pub.Y
+	r, s, err := ecdsa.Sign(rand.Reader, priv, hash)
+	if err != nil {
+		return nil, err
+	}
+	ret := r.Bytes()
+	ret = append(ret, s.Bytes()...)
+	return ret, nil
+}
+
+func (pk PrivateKey) Marshal() []byte {
+	return pk.D.Bytes()
+}
+
+func (pk PrivateKey) PublicKey() *PublicKey {
+	pp := &PublicKey{}
+	pp.X, pp.Y = curve.ScalarBaseMult(pk.Marshal())
+	pp.Compressed(pk.compressed)
+	return pp
+}
+
+type SigValue []byte
+
+//secp256k1_ecdsa_sig_serialize
+func (s SigValue) Marshal() []byte {
+	return nil
+}
+
+func (s *SigValue) Unmarshal(b []byte) error {
+	return nil
+}
+
+type PublicKey struct {
+	X          *big.Int
+	Y          *big.Int
+	b0         byte
+	compressed bool
+}
+
+func LoadPublicKey(data []byte) (*PublicKey, error) {
+	pk := &PublicKey{}
 	byteLen := (curve.Params().BitSize + 7) >> 3
 	if len(data) == 0 {
-		return errors.New("data empty")
+		return nil, errors.New("data empty")
 	}
-	bl := GetPubKeyLen(data[0])
+	pk.b0 = data[0]
+	bl := GetPubKeyLen(pk.b0)
 	if len(data) != bl {
-		return errors.New("data size error")
+		return nil, errors.New("data size error")
 	}
 	if bl == PUBLIC_KEY_SIZE {
 		if data[0] != P256_PUBKEY_UNCOMPRESSED && data[0] != P256_PUBKEY_HYBRID_EVEN && data[0] != P256_PUBKEY_HYBRID_ODD {
-			return errors.New("public head byte error")
+			return nil, errors.New("public head byte error")
 		}
 		p := curve.Params().P
 		x := new(big.Int).SetBytes(data[1 : 1+byteLen])
 		y := new(big.Int).SetBytes(data[1+byteLen:])
-		d := BigIntOdd(y)
+		d := byte(y.Bit(0))
 		if data[0] != P256_PUBKEY_HYBRID_ODD && d != 1 {
-			return errors.New("public key odd error")
+			return nil, errors.New("public key odd error")
 		}
 		if data[0] != P256_PUBKEY_HYBRID_EVEN && d != 0 {
-			return errors.New("public key even error")
+			return nil, errors.New("public key even error")
 		}
 		if x.Cmp(p) >= 0 || y.Cmp(p) >= 0 {
-			return errors.New(" x,y error")
+			return nil, errors.New(" x,y error")
 		}
 		if !curve.IsOnCurve(x, y) {
-			return errors.New(" x,y not at curve error")
+			return nil, errors.New(" x,y not at curve error")
 		}
-		pk.x, pk.y = x, y
+		pk.X, pk.Y = x, y
+		pk.compressed = false
 	} else if bl == COMPRESSED_PUBLIC_KEY_SIZE {
 		if data[0] != P256_PUBKEY_EVEN && data[0] != P256_PUBKEY_ODD {
-			return errors.New(" cpmpressed head byte error")
+			return nil, errors.New(" compressed head byte error")
 		}
 		p := curve.Params().P
 		x := new(big.Int).SetBytes(data[1 : 1+byteLen])
-		y := new(big.Int)
-		//
-		d := BigIntOdd(y)
+		var y *big.Int
+		ybit := uint(0)
+		if data[0] == P256_PUBKEY_ODD {
+			ybit = 1
+		}
+		if v, err := util.DecompressY(x, ybit); err != nil {
+			return nil, fmt.Errorf("decompress x -> y error %v", err)
+		} else {
+			y = v
+		}
+		d := byte(y.Bit(0))
 		if data[0] != P256_PUBKEY_ODD && d != 1 {
-			return errors.New("cpmpressed public key odd error")
+			return nil, errors.New("cpmpressed public key odd error")
 		}
 		if data[0] != P256_PUBKEY_EVEN && d != 0 {
-			return errors.New("cpmpressed public key even error")
+			return nil, errors.New("cpmpressed public key even error")
 		}
 		if x.Cmp(p) >= 0 || y.Cmp(p) >= 0 {
-			return errors.New("cpmpressed x,y error")
+			return nil, errors.New("cpmpressed x,y error")
 		}
 		if !curve.IsOnCurve(x, y) {
-			return errors.New("cpmpressed x,y not at curve error")
+			return nil, errors.New("cpmpressed x,y not at curve error")
 		}
-		pk.x, pk.y = x, y
+		pk.X, pk.Y = x, y
+		pk.compressed = true
 	}
-	return errors.New("data size error")
+	return pk, errors.New("data size error")
+}
+
+func (pb *PublicKey) IsValid() bool {
+	return curve.IsOnCurve(pb.X, pb.Y)
+}
+
+func (pk *PublicKey) Compressed(v bool) {
+	pk.compressed = v
+}
+
+//check marshal pubkey
+func IsValidPublicKey(pk []byte) bool {
+	return len(pk) > 0 && GetPubKeyLen(pk[0]) == len(pk)
+}
+
+func (pk *PublicKey) Verify(hash []byte, sig []byte) bool {
+	if len(sig) != (curve.Params().BitSize/8)*2 {
+		return false
+	}
+	pub := new(ecdsa.PublicKey)
+	pub.Curve = curve
+	pub.X, pub.Y = pk.X, pk.Y
+	r := new(big.Int).SetBytes(sig[:32])
+	s := new(big.Int).SetBytes(sig[32:])
+	return ecdsa.Verify(pub, hash, r, s)
+}
+
+func (pk *PublicKey) Hybrid() []byte {
+	ret := []byte{}
+	d := byte(pk.Y.Bit(0))
+	ret = append(ret, P256_PUBKEY_HYBRID_EVEN+d)
+	ret = append(ret, pk.X.Bytes()...)
+	ret = append(ret, pk.Y.Bytes()...)
+	return ret
 }
 
 func (pk *PublicKey) Marshal() []byte {
-	if len(pk.data) == 0 {
-		pk.data = elliptic.Marshal(pk.curve, pk.x, pk.y)
-	}
-	return pk.data
-}
-
-type PubKey [PUBLIC_KEY_SIZE]byte
-
-func NewPubKey() *PubKey {
-	k := &PubKey{}
-	k.Invalidate()
-	return k
-}
-
-func (p *PubKey) Equal(o *PubKey) bool {
-	return p[0] == o[0] && bytes.Equal(p[:p.Size()], o[:o.Size()])
-}
-
-func (p *PubKey) IsValid() bool {
-	return p.Size() > 0
-}
-
-func (p *PubKey) Verify(hv []byte, sig []byte) bool {
-	x, y := elliptic.Unmarshal(elliptic.P256(), p.Bytes())
-	if x == nil || y == nil {
-		return false
-	}
-	return false
-}
-
-func (p *PubKey) IsFullyValid() bool {
-	if !p.IsValid() {
-		return false
-	}
-	x, y := elliptic.Unmarshal(elliptic.P256(), p.Bytes())
-	if x == nil || y == nil {
-		return false
-	}
-	return true
-}
-
-func (p *PubKey) IsCompressed() bool {
-	return p.Size() == COMPRESSED_PUBLIC_KEY_SIZE
-}
-
-func (p *PubKey) Bytes() []byte {
-	return p[:p.Size()]
-}
-
-func (p *PubKey) HashID() []byte {
-	return util.HASH160(p[:p.Size()])
-}
-
-func (p *PubKey) Set(buf []byte) {
-	if len(buf) != GetPubKeyLen(buf[0]) {
-		p.Invalidate()
+	ret := []byte{}
+	d := byte(pk.Y.Bit(0))
+	if !pk.compressed {
+		ret = append(ret, P256_PUBKEY_UNCOMPRESSED)
+		ret = append(ret, pk.X.Bytes()...)
+		ret = append(ret, pk.Y.Bytes()...)
 	} else {
-		copy(p[:], buf)
+		ret = append(ret, P256_PUBKEY_EVEN+d)
+		ret = append(ret, pk.X.Bytes()...)
 	}
-}
-
-func (p *PubKey) Invalidate() {
-	p[0] = 0xFF
-}
-
-func (p *PubKey) Size() int {
-	return GetPubKeyLen(p[0])
-}
-
-func (p *PubKey) ValidSize(key []byte) bool {
-	return len(key) > 0 && GetPubKeyLen(key[0]) == p.Size()
-}
-
-func (p *PubKey) SetRange(buf []byte, b, e int) {
-	if (e - b) != GetPubKeyLen(buf[b]) {
-		p.Invalidate()
-	} else {
-		copy(p[:], buf[b:e])
-	}
+	return ret
 }
