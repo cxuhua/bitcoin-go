@@ -88,7 +88,7 @@ func TestBase58Key(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	log.Println(mpk.PublicKey())
+	log.Println(hex.EncodeToString(util.HASH160(mpk.PublicKey().Marshal())))
 	pk1, err := DecodePrivateKey(strSecret1)
 	if err != nil {
 		t.Errorf("DecodePrivateKey error %v", err)
