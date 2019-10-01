@@ -139,40 +139,56 @@ type SigValue struct {
 	S *big.Int
 }
 
-//secp256k1_ecdsa_sig_serialize
-/*
-static int secp256k1_ecdsa_sig_serialize(unsigned char *sig, size_t *size, const secp256k1_scalar* ar, const secp256k1_scalar* as) {
-    unsigned char r[33] = {0}, s[33] = {0};
-    unsigned char *rp = r, *sp = s;
-    size_t lenR = 33, lenS = 33;
-    secp256k1_scalar_get_b32(&r[1], ar);
-    secp256k1_scalar_get_b32(&s[1], as);
-    while (lenR > 1 && rp[0] == 0 && rp[1] < 0x80) { lenR--; rp++; }
-    while (lenS > 1 && sp[0] == 0 && sp[1] < 0x80) { lenS--; sp++; }
-    if (*size < 6+lenS+lenR) {
-        *size = 6 + lenS + lenR;
-        return 0;
-    }
-    *size = 6 + lenS + lenR;
-    sig[0] = 0x30;
-    sig[1] = 4 + lenS + lenR;
-    sig[2] = 0x02;
-    sig[3] = lenR;
-    memcpy(sig+4, rp, lenR);
-    sig[4+lenR] = 0x02;
-    sig[5+lenR] = lenS;
-    memcpy(sig+lenR+6, sp, lenS);
-    return 1;
+func (sig SigValue) ToBytes() []byte {
+	r := []byte{}
+	r = append(r, sig.R.Bytes()...)
+	r = append(r, sig.S.Bytes()...)
+	return r
 }
-*/
-func (sig SigValue) Marshal() []byte {
-	if sig.R == nil || sig.S == nil {
-		panic(errors.New("null sig value"))
+
+func (sig SigValue) ToDER() []byte {
+	r := sig.R.Bytes()
+	if r[0] >= 0x80 {
+		r = append([]byte{0}, r...)
 	}
+	s := sig.S.Bytes()
+	if s[0] >= 0x80 {
+		s = append([]byte{0}, s...)
+	}
+	res := new(bytes.Buffer)
+	res.WriteByte(0x30)
+	res.WriteByte(byte(4 + len(r) + len(s)))
+	res.WriteByte(0x02)
+	res.WriteByte(byte(len(r)))
+	res.Write(r)
+	res.WriteByte(0x02)
+	res.WriteByte(byte(len(s)))
+	res.Write(s)
+	return res.Bytes()
+}
+func (sig *SigValue) FromBytes(b []byte) error {
+	if len(b) != 64 {
+		return errors.New("b size error")
+	}
+	sig.R = new(big.Int).SetBytes(b[:32])
+	sig.S = new(big.Int).SetBytes(b[32:])
 	return nil
 }
 
-func (sig *SigValue) Unmarshal(b []byte) error {
+func (sig *SigValue) FromDER(b []byte) error {
+	if b[0] != 0x30 || len(b) < 5 {
+		return errors.New("der format error")
+	}
+	lenr := int(b[3])
+	if lenr == 0 || 5+lenr >= len(b) || b[lenr+4] != 0x02 {
+		return errors.New("der length error")
+	}
+	lens := int(b[lenr+5])
+	if lens == 0 || int(b[1]) != lenr+lens+4 || lenr+lens+6 > len(b) || b[2] != 0x02 {
+		return errors.New("der length error")
+	}
+	sig.R = new(big.Int).SetBytes(b[4 : 4+lenr])
+	sig.S = new(big.Int).SetBytes(b[6+lenr : 6+lenr+lens])
 	return nil
 }
 
@@ -202,10 +218,10 @@ func LoadPublicKey(data []byte) (*PublicKey, error) {
 		x := new(big.Int).SetBytes(data[1 : 1+byteLen])
 		y := new(big.Int).SetBytes(data[1+byteLen:])
 		d := byte(y.Bit(0))
-		if data[0] != P256_PUBKEY_HYBRID_ODD && d != 1 {
+		if data[0] == P256_PUBKEY_HYBRID_ODD && d != 1 {
 			return nil, errors.New("public key odd error")
 		}
-		if data[0] != P256_PUBKEY_HYBRID_EVEN && d != 0 {
+		if data[0] == P256_PUBKEY_HYBRID_EVEN && d != 0 {
 			return nil, errors.New("public key even error")
 		}
 		if x.Cmp(p) >= 0 || y.Cmp(p) >= 0 {
@@ -216,7 +232,9 @@ func LoadPublicKey(data []byte) (*PublicKey, error) {
 		}
 		pk.X, pk.Y = x, y
 		pk.compressed = false
-	} else if bl == COMPRESSED_PUBLIC_KEY_SIZE {
+		return pk, nil
+	}
+	if bl == COMPRESSED_PUBLIC_KEY_SIZE {
 		if data[0] != P256_PUBKEY_EVEN && data[0] != P256_PUBKEY_ODD {
 			return nil, errors.New(" compressed head byte error")
 		}
@@ -233,20 +251,21 @@ func LoadPublicKey(data []byte) (*PublicKey, error) {
 			y = v
 		}
 		d := byte(y.Bit(0))
-		if data[0] != P256_PUBKEY_ODD && d != 1 {
-			return nil, errors.New("cpmpressed public key odd error")
+		if data[0] == P256_PUBKEY_ODD && d != 1 {
+			return nil, errors.New("decompress public key odd error")
 		}
-		if data[0] != P256_PUBKEY_EVEN && d != 0 {
-			return nil, errors.New("cpmpressed public key even error")
+		if data[0] == P256_PUBKEY_EVEN && d != 0 {
+			return nil, errors.New("decompress public key even error")
 		}
 		if x.Cmp(p) >= 0 || y.Cmp(p) >= 0 {
-			return nil, errors.New("cpmpressed x,y error")
+			return nil, errors.New("decompress x,y error")
 		}
 		if !curve.IsOnCurve(x, y) {
 			return nil, errors.New("cpmpressed x,y not at curve error")
 		}
 		pk.X, pk.Y = x, y
 		pk.compressed = true
+		return pk, nil
 	}
 	return pk, errors.New("data size error")
 }
