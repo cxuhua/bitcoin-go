@@ -30,6 +30,9 @@ package util
 
 import (
 	"crypto/elliptic"
+	"crypto/rand"
+	"errors"
+	"io"
 	"math/big"
 	"sync"
 )
@@ -38,7 +41,43 @@ var (
 	initonce  sync.Once
 	secp256k1 *secp256k1Curve
 	three     = new(big.Int).SetUint64(3)
+	one       = new(big.Int).SetInt64(1)
 )
+
+func GenPrivateKey() (k *big.Int, err error) {
+	params := secp256k1.Params()
+	b := make([]byte, params.BitSize/8+8)
+	_, err = io.ReadFull(rand.Reader, b)
+	if err != nil {
+		return
+	}
+	k = new(big.Int).SetBytes(b)
+	n := new(big.Int).Sub(params.N, one)
+	k.Mod(k, n)
+	k.Add(k, one)
+	return
+}
+
+func DecompressY(x *big.Int, ybit uint) (*big.Int, error) {
+	c := secp256k1.Params()
+
+	// y^2 = x^3 + b
+	// y   = sqrt(x^3 + b)
+	var y, x3b big.Int
+	x3b.Mul(x, x)
+	x3b.Mul(&x3b, x)
+	x3b.Add(&x3b, c.B)
+	x3b.Mod(&x3b, c.P)
+	y.ModSqrt(&x3b, c.P)
+
+	if y.Bit(0) != ybit {
+		y.Sub(c.P, &y)
+	}
+	if y.Bit(0) != ybit {
+		return nil, errors.New("incorrectly encoded X and Y bit")
+	}
+	return &y, nil
+}
 
 type secp256k1Curve struct {
 	elliptic.CurveParams

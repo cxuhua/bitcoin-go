@@ -5,6 +5,14 @@ import (
 	"strings"
 )
 
+const (
+	PUBKEY_ADDRESS = iota
+	SCRIPT_ADDRESS
+	SECRET_KEY
+	EXT_PUBLIC_KEY
+	EXT_SECRET_KEY
+)
+
 type Config struct {
 	//network id
 	Id string
@@ -18,6 +26,12 @@ type Config struct {
 	LocalAddr string //ip:port
 	//
 	SegwitHeight uint
+
+	b58prefixs map[int][]byte
+}
+
+func (c Config) Base58Prefix(idx int) []byte {
+	return c.b58prefixs[idx]
 }
 
 func (c Config) GetLocalAddr() (string, uint16) {
@@ -47,8 +61,13 @@ func GetConfig() *Config {
 		return config
 	}
 	c := &Config{}
+
+	c.b58prefixs = map[int][]byte{}
+
 	c.Id = "main"
+
 	c.MsgStart = []byte{0xF9, 0xBE, 0xB4, 0xD9}
+
 	c.Seeds = []string{
 		"seed.bitcoin.sipa.be",
 		"dnsseed.bluematt.me",
@@ -61,7 +80,15 @@ func GetConfig() *Config {
 	}
 	c.SubVer = "/golang:0.1.0/"
 	c.LocalAddr = "192.168.31.198:8333"
+
 	c.SegwitHeight = 481824
+	//
+	c.b58prefixs[PUBKEY_ADDRESS] = []byte{0}
+	c.b58prefixs[SCRIPT_ADDRESS] = []byte{5}
+	c.b58prefixs[SECRET_KEY] = []byte{128}
+	c.b58prefixs[EXT_PUBLIC_KEY] = []byte{0x04, 0x88, 0xB2, 0x1E}
+	c.b58prefixs[EXT_SECRET_KEY] = []byte{0x04, 0x88, 0xAD, 0xE4}
+	//
 	config = c
 	return config
 }
