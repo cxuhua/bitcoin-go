@@ -43,6 +43,7 @@ func HexDecode(s string) []byte {
 	return d
 }
 
+//3
 func P2SHAddress(pk []byte) string {
 	var a []byte = nil
 	if len(pk) == 20 {
@@ -57,6 +58,7 @@ func P2SHAddress(pk []byte) string {
 	return B58Encode(b, BitcoinAlphabet)
 }
 
+//1
 func P2PKHAddress(pk []byte) string {
 	var a []byte = nil
 	if len(pk) == 20 {
@@ -69,6 +71,11 @@ func P2PKHAddress(pk []byte) string {
 	c := HASH256(b)
 	b = append(b, c[:4]...)
 	return B58Encode(b, BitcoinAlphabet)
+}
+
+//bc
+func P2WPKHAddress(pk []byte) string {
+	return ""
 }
 
 func RandUInt64() uint64 {

@@ -19,15 +19,26 @@ const (
 )
 
 const (
-	TX_NONSTANDARD = iota
+	WITNESS_V0_SCRIPTHASH_SIZE = 32
+	WITNESS_V0_KEYHASH_SIZE    = 20
+)
+
+const (
+	TX_NONSTANDARD = iota //coinbase
+	TX_P2PKH
+	TX_P2SH_MULTISIG
+	TX_P2SH_WPKH_V0
+	TX_P2WPKH_V0
+
+	// 'standard' transaction types:
 	TX_PUBKEY
 	TX_PUBKEYHASH
 	TX_SCRIPTHASH
 	TX_MULTISIG
-	TX_NULL_DATA
+	TX_NULL_DATA //!< unspendable OP_RETURN script that carries data
 	TX_WITNESS_V0_SCRIPTHASH
 	TX_WITNESS_V0_KEYHASH
-	TX_WITNESS_UNKNOWN
+	TX_WITNESS_UNKNOWN //!< Only for Witness versions not already defined above
 )
 
 type OpCodeType byte
@@ -736,12 +747,12 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				sig := stack.Top(-2).ToBytes()
 				pk := stack.Top(-1).ToBytes()
 				sub := s.SubScript(pb, pe)
-				if sigver == SIG_VER_BASE {
-					found := FindAndDelete(sub, NewScript(sig))
-					if found > 0 && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
-						return false, SCRIPT_ERR_SIG_FINDANDDELETE
-					}
-				}
+				//if sigver == SIG_VER_BASE {
+				//	///*found := FindAndDelete(sub, NewScript(sig))
+				//	//if found > 0 && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
+				//	//	return false, SCRIPT_ERR_SIG_FINDANDDELETE
+				//	//}*/
+				//}
 				if err := CheckSignatureEncoding(sig, flags); err != nil {
 					return false, err
 				}

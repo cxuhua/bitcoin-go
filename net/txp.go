@@ -105,6 +105,13 @@ type TxOut struct {
 	Script *script.Script
 }
 
+func (m *TxOut) OutBytes() []byte {
+	buf := &bytes.Buffer{}
+	binary.Write(buf, ByteOrder, m.Value)
+	binary.Write(buf, ByteOrder, m.Script)
+	return buf.Bytes()
+}
+
 func (m *TxOut) Read(h *NetHeader) {
 	m.Value = h.ReadUInt64()
 	m.Script = h.ReadScript()
@@ -333,6 +340,24 @@ func (m *TX) GetValueOut() Amount {
 	}
 	return tv
 }
+
+func (m *TX) SigBytes(ht byte) []byte {
+	//not include witnesses
+	h := NewNetHeader()
+	h.WriteUInt32(uint32(m.Ver))
+	h.WriteVarInt(uint64(len(m.Ins)))
+	for _, v := range m.Ins {
+		v.Write(h)
+	}
+	h.WriteVarInt(uint64(len(m.Outs)))
+	for _, v := range m.Outs {
+		v.Write(h)
+	}
+	h.WriteUInt32(m.LockTime)
+	h.WriteUInt32(uint32(ht))
+	return h.Bytes()
+}
+
 func (m *TX) HashID() HashID {
 	//not include witnesses
 	h := NewNetHeader()

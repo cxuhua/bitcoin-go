@@ -81,14 +81,77 @@ const (
 	addr1C      = "1NoJrossxPBKfCHuJXT4HadJrXRE9Fxiqs"
 	addr2C      = "1CRj2HyM1CXWzHAXLQtiGLyggNT9WQqsDs"
 	mine        = "KzuLBpfbi8gQ2XCFK6SHFiwVqgTsQDEu14EbwAictnG6cBit566Y"
+	addrmine    = "3Pah4Pzj38rKEFx3sQkyB9w74Fc7RAAP36"
 )
 
-func TestBase58Key(t *testing.T) {
-	mpk, err := DecodePrivateKey(mine)
-	if err != nil {
+//P2PKH
+//OP_DUP OP_HASH160 29e5f2b72b1c249a77a6887d924810880876a42b OP_EQUALVERIFY OP_CHECKSIG
+//47304402207a5b17e4bb5690842517bf75f9186f25d8b3d6e54675f9b637dbacc721f08f170220278d483550b069c994d82fc5aab20e09950666c6de1c12991c43fa39f2260e86012102d206752a8fd6886986afc16b0afff4ec39dc2846401e93c3742a021804340d7d
+
+/*
+00
+48
+30450221008bd8c224442c25b6632f14c4d9b25754bbc1220469b4999b8c90e0ee64443c5f022008cdaa44aee34d7b4ed2c0b613110e2912c412e0307f4bc07982767d0c30d75e01
+48
+30450221008e0fed260ffd43454ce8f180e2e5dd93600fa6b34650a3398e4e2f9091025808022070ce4f148416c1e0df20a4ca5898e09e872b175e03fd5dd01d19391c259c7b4001
+4c
+69
+
+52 OP_2
+21 LEN
+021a48fa8fc23584e0678a0c22fc3fe751a8fc2c23e27f02fdfb55e1d7c747ff63
+21 LEN
+023a1a512d02d65ced176bd37fd3ecbda9a62c1434b87ec2e9e189391694b0e566
+21 LEN
+029ec11825589f2737cc0dd84dd50d5749037a91702fe1ee03ac7291f2c29b71a7
+53
+ae
+*/
+func TestTX_P2SH_MULTISIGAddresst(t *testing.T) {
+	script := "0348c6b064bc9525a2ff52df469d0aae81f41c538370b78d7347f10c7207f9e21c"
+	xx := util.HexDecode(script)
+	hash := util.HASH160(xx)
+
+	sig := &SigValue{}
+	sig.Decode(util.HexDecode("30450221008bd8c224442c25b6632f14c4d9b25754bbc1220469b4999b8c90e0ee64443c5f022008cdaa44aee34d7b4ed2c0b613110e2912c412e0307f4bc07982767d0c30d75e01"))
+
+	pub1 := &PublicKey{}
+	if err := pub1.FromHEX("021a48fa8fc23584e0678a0c22fc3fe751a8fc2c23e27f02fdfb55e1d7c747ff63"); err != nil {
 		panic(err)
 	}
-	log.Println(hex.EncodeToString(util.HASH160(mpk.PublicKey().Marshal())))
+	if pub1.Verify(hash, sig) {
+		log.Println("Verify1=true")
+	}
+	pub2 := &PublicKey{}
+	if err := pub2.FromHEX("023a1a512d02d65ced176bd37fd3ecbda9a62c1434b87ec2e9e189391694b0e566"); err != nil {
+		panic(err)
+	}
+	if pub2.Verify(hash, sig) {
+		log.Println("Verify2=true")
+	}
+	pub3 := &PublicKey{}
+	if err := pub3.FromHEX("029ec11825589f2737cc0dd84dd50d5749037a91702fe1ee03ac7291f2c29b71a7"); err != nil {
+		panic(err)
+	}
+	if pub3.Verify(hash, sig) {
+		log.Println("Verify3=true")
+	}
+
+	//v1, _, err := GetPublicAddress(TX_P2SH_MULTISIG, []*PublicKey{pub1, pub2, pub3})
+	//if err != nil {
+	//	panic(err)
+	//}
+	//if v1 != "3EXzFTs3BGcH71AycTcgrVCc9QqPL6WA4Y" {
+	//	t.Errorf("TX_P2SH_MULTISIG gen error")
+	//}
+}
+
+func TestBase58Key(t *testing.T) {
+	mpk, _ := DecodePrivateKey(mine)
+	pub := mpk.PublicKey()
+	v1, v2, err := GetPublicAddress(TX_P2SH_WPKH_V0, []*PublicKey{pub})
+	log.Println(v1, v2, err)
+
 	pk1, err := DecodePrivateKey(strSecret1)
 	if err != nil {
 		t.Errorf("DecodePrivateKey error %v", err)
@@ -171,7 +234,7 @@ func TestSecp256Data(t *testing.T) {
 			panic(err)
 		}
 		sig := &SigValue{}
-		err = sig.FromDER(sign)
+		err = sig.Decode(sign)
 		if err != nil {
 			panic(err)
 		}
