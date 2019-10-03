@@ -1,12 +1,15 @@
 package net
 
 import (
+	"bitcoin/db"
 	"bitcoin/script"
 	"bitcoin/util"
 	"bytes"
 	"encoding/binary"
 	"encoding/hex"
+	"errors"
 	"fmt"
+	"log"
 )
 
 const (
@@ -32,6 +35,10 @@ func (b HashID) IsZero() bool {
 	return bytes.Equal(b[:], bz)
 }
 
+func (b HashID) Bytes() []byte {
+	return b[:]
+}
+
 func (b HashID) Swap() HashID {
 	v := HashID{}
 	j := 0
@@ -52,7 +59,7 @@ func NewHexBHash(s string) HashID {
 		panic(err)
 	}
 	copy(b[:], v)
-	return b
+	return b.Swap()
 }
 
 type Inventory struct {
@@ -105,6 +112,13 @@ type TxOut struct {
 	Script *script.Script
 }
 
+func (m *TxOut) Clone() *TxOut {
+	v := &TxOut{}
+	v.Value = m.Value
+	v.Script = m.Script.Clone()
+	return v
+}
+
 func (m *TxOut) OutBytes() []byte {
 	buf := &bytes.Buffer{}
 	binary.Write(buf, ByteOrder, m.Value)
@@ -130,6 +144,47 @@ type TxIn struct {
 	Witness  *TxWitnesses
 }
 
+//lock script
+func (m *TxIn) Eval(lock *script.Script, checker script.SigChecker) error {
+	if lock != nil {
+		return errors.New("lock script miss")
+	}
+	if m.Script == nil {
+		return errors.New("tx input script miss")
+	}
+	if lock.IsP2PKH() {
+		stack := script.NewStack()
+		ok, err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("eval unlock script failed")
+		}
+		ok, err = lock.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return errors.New("eval lock script failed")
+		}
+		return nil
+	}
+	return nil
+}
+
+func (m *TxIn) Clone() *TxIn {
+	v := &TxIn{}
+	copy(v.OutHash[:], m.OutHash[:])
+	v.OutIndex = m.OutIndex
+	v.Script = m.Script.Clone()
+	v.Sequence = m.Sequence
+	if m.Witness != nil {
+		v.Witness = m.Witness.Clone()
+	}
+	return v
+}
+
 func (m *TxIn) OutBytes() []byte {
 	buf := &bytes.Buffer{}
 	binary.Write(buf, ByteOrder, m.OutHash[:])
@@ -153,6 +208,17 @@ func (m *TxIn) Write(h *NetHeader) {
 
 type TxWitnesses struct {
 	Script []*script.Script
+}
+
+func (m *TxWitnesses) Clone() *TxWitnesses {
+	if len(m.Script) == 0 {
+		return nil
+	}
+	ss := make([]*script.Script, len(m.Script))
+	for i, v := range m.Script {
+		ss[i] = v.Clone()
+	}
+	return &TxWitnesses{Script: ss}
 }
 
 func (m *TxWitnesses) Read(h *NetHeader) {
@@ -264,19 +330,105 @@ type TX struct {
 	wepos    int //witness wpos end
 }
 
-func (m *TX) Check(h *NetHeader, checkDupIn bool) error {
+type TXHeader struct {
+	Id  []byte `bson:"_id"`
+	Ver int32  `bson:"ver"`
+	Raw []byte `bson:"raw"`
+}
+
+func (txh *TXHeader) ToTX() *TX {
+	tx := &TX{}
+	h := NewNetHeader(txh.Raw)
+	tx.Read(h)
+	return tx
+}
+
+func LoadTX(id HashID, d db.DbImp) (*TX, error) {
+	//from cache get
+	if v, err := Txs.Get(id); err == nil {
+		return v, nil
+	}
+	//from database
+	txh := &TXHeader{}
+	err := d.GetTX(id.Bytes(), txh)
+	if err != nil {
+		return nil, err
+	}
+	tx := txh.ToTX()
+	//set to cache
+	if err := Txs.Set(id, tx); err != nil {
+		log.Println("TxCacher set error", err)
+	}
+	return tx, nil
+}
+
+func NewTXFrom(tx *TX) *TXHeader {
+	txh := &TXHeader{}
+	h := NewNetHeader()
+	txh.Id = tx.HashIDToHeader(h).Bytes()
+	txh.Ver = tx.Ver
+	txh.Raw = h.Bytes()
+	return txh
+}
+
+func (m *TX) Save(d db.DbImp) error {
+	id := m.HashID()
+	h := NewTXFrom(m)
+	err := d.SetTX(id[:], h)
+	if err != nil {
+		return err
+	}
+	return Txs.Set(id, m)
+}
+
+//get pre tx
+func (m *TX) GetPrevTx(i int, d db.DbImp) (*TX, error) {
+	in := m.Ins[i]
+	return LoadTX(in.OutHash, d)
+}
+
+//verify tx data
+func (m *TX) Verify(db db.DbImp) error {
+	if err := m.Check(); err != nil {
+		return fmt.Errorf("check tx error %v", err)
+	}
+	//checker := NewBaseSigChecker(m)
+	////verify txin
+	//for i, v := range m.Ins {
+	//
+	//}
+	return nil
+}
+
+func (m *TX) Clone() *TX {
+	v := &TX{}
+	v.Ver = m.Ver
+	if len(m.Flag) > 0 {
+		v.Flag = make([]byte, len(m.Flag))
+		copy(v.Flag, m.Flag)
+	}
+	v.Ins = make([]*TxIn, len(m.Ins))
+	for i, iv := range m.Ins {
+		v.Ins[i] = iv.Clone()
+	}
+	v.Outs = make([]*TxOut, len(m.Outs))
+	for i, ov := range m.Outs {
+		v.Outs[i] = ov.Clone()
+	}
+	v.LockTime = m.LockTime
+	return v
+}
+
+func (m *TX) Check() error {
 	if len(m.Ins) == 0 {
 		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vin-empty")
 	}
 	if len(m.Outs) == 0 {
 		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-outs-empty")
 	}
-	if uint(h.Pos()-m.WitnessesLen())*WITNESS_SCALE_FACTOR > MAX_BLOCK_WEIGHT {
-		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-oversize")
-	}
 	vout := Amount(0)
 	for _, v := range m.Outs {
-		if v.Value < 0 {
+		if int64(v.Value) < 0 {
 			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vout-negative")
 		}
 		if Amount(v.Value) > MAX_MONEY {
@@ -286,17 +438,6 @@ func (m *TX) Check(h *NetHeader, checkDupIn bool) error {
 		if !vout.IsRange() {
 			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-txouttotal-toolarge")
 		}
-	}
-	if checkDupIn {
-		inos := util.NewBytesArray()
-		for _, v := range m.Ins {
-			vbs := v.OutBytes()
-			if inos.Has(vbs) {
-				return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-inputs-duplicate")
-			}
-			inos.Append(vbs)
-		}
-		inos = nil
 	}
 	if m.IsCoinBase() {
 		if m.Ins[0].Script.Len() < 2 || m.Ins[0].Script.Len() > 100 {
@@ -358,9 +499,8 @@ func (m *TX) SigBytes(ht byte) []byte {
 	return h.Bytes()
 }
 
-func (m *TX) HashID() HashID {
+func (m *TX) HashIDToHeader(h *NetHeader) HashID {
 	//not include witnesses
-	h := NewNetHeader()
 	h.WriteUInt32(uint32(m.Ver))
 	h.WriteVarInt(uint64(len(m.Ins)))
 	for _, v := range m.Ins {
@@ -377,12 +517,14 @@ func (m *TX) HashID() HashID {
 	return id
 }
 
-func (m *TX) IsCoinBase() bool {
-	return len(m.Ins) > 0 && m.Ins[0].OutHash.IsZero()
+func (m *TX) HashID() HashID {
+	//not include witnesses
+	h := NewNetHeader()
+	return m.HashIDToHeader(h)
 }
 
-func (m *TX) HasFlag() bool {
-	return len(m.Flag) == 2 && m.Flag[0] == 0 && m.Flag[1] == 1
+func (m *TX) IsCoinBase() bool {
+	return len(m.Ins) > 0 && m.Ins[0].OutHash.IsZero()
 }
 
 func (m *TX) ReadWitnesses(h *NetHeader) {
@@ -399,7 +541,7 @@ func (m *TX) Read(h *NetHeader) {
 	m.Ver = int32(h.ReadUInt32())
 	//check flag for witnesses
 	m.Flag = h.Peek(2)
-	if m.HasFlag() {
+	if m.HasWitness() {
 		h.Skip(2)
 	}
 	il, _ := h.ReadVarInt()
@@ -417,19 +559,14 @@ func (m *TX) Read(h *NetHeader) {
 		m.Outs[i] = v
 	}
 	//if has witnesses
-	if m.HasFlag() {
+	if m.HasWitness() {
 		m.ReadWitnesses(h)
 	}
 	m.LockTime = h.ReadUInt32()
 }
 
 func (m *TX) HasWitness() bool {
-	for _, v := range m.Ins {
-		if v.Witness == nil {
-			return false
-		}
-	}
-	return true
+	return len(m.Flag) == 2 && m.Flag[0] == 0 && m.Flag[1] == 1
 }
 
 func (m *TX) WitnessesLen() int {
@@ -450,7 +587,7 @@ func (m *TX) WriteWitnesses(h *NetHeader) {
 func (m *TX) Write(h *NetHeader) {
 	h.WriteUInt32(uint32(m.Ver))
 	if m.HasWitness() {
-		h.WriteBytes([]byte{0, 1})
+		h.WriteBytes(m.Flag)
 	}
 	h.WriteVarInt(uint64(len(m.Ins)))
 	for _, v := range m.Ins {

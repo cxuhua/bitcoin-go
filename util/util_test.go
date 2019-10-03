@@ -37,13 +37,13 @@ func TestLongAddress(t *testing.T) {
 		t.Errorf("TestLongAddress error %s", addr)
 	}
 }
-func TestAddress(t *testing.T) {
-	s, err := hex.DecodeString("8fd139bb39ced713f231c58a4d07bf6954d1c201")
+func TestBECH32Address(t *testing.T) {
+	s, err := hex.DecodeString("0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798")
 	if err != nil {
 		panic(err)
 	}
-	addr := P2PKHAddress(s)
-	if addr != "1E7SGgAZFCHDnVZLuRViX3gUmxpMfdvd2o" {
+	addr := BECH32Address(s)
+	if addr != "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" {
 		t.Errorf("TestAddress error %s", addr)
 	}
 }

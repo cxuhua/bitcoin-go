@@ -1,7 +1,6 @@
 package script
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 )
@@ -194,32 +193,6 @@ func CheckSignatureEncoding(sig []byte, flags uint32) error {
 	return nil
 }
 
-func FindAndDelete(s1 *Script, s2 *Script) int {
-	nFound := 0
-	if s2.Len() == 0 {
-		return nFound
-	}
-	ret := NewScript([]byte{})
-	p1, p2, p := 0, 0, s1.Len()
-	for {
-		*ret = append(*ret, (*s1)[p1:p2]...)
-		for p-p1 > s2.Len() && bytes.Equal(*s2, (*s1)[p1:]) {
-			p1 = p1 + s2.Len()
-			nFound++
-		}
-		ok, idx, _, _ := s1.GetOp(p1)
-		if !ok {
-			break
-		}
-		p1 = idx
-	}
-	if nFound > 0 {
-		*ret = append(*ret, (*s1)[p1:p]...)
-		*s1 = *ret
-	}
-	return nFound
-}
-
 func (v ScriptNum) Serialize() []byte {
 	ret := []byte{}
 	if v == 0 {
@@ -261,7 +234,15 @@ func (s Script) HasValidOps() bool {
 	return true
 }
 
-func (s Script) IsPayToScriptHash() bool {
+func (s *Script) IsP2WPKHV0() bool {
+	return false
+}
+
+func (s Script) IsP2PKH() bool {
+	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
+}
+
+func (s Script) IsP2SH() bool {
 	return (s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL)
 }
 
@@ -282,7 +263,7 @@ func (s Script) IsWitnessProgram() (int, []byte, bool) {
 }
 
 func (s Script) GetScriptSigOpCount(script *Script) int {
-	if !s.IsPayToScriptHash() {
+	if !s.IsP2SH() {
 		return s.GetSigOpCount(true)
 	}
 	var subd []byte = nil

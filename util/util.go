@@ -74,8 +74,20 @@ func P2PKHAddress(pk []byte) string {
 }
 
 //bc
-func P2WPKHAddress(pk []byte) string {
-	return ""
+func BECH32Address(pk []byte) string {
+	var a []byte = nil
+	if len(pk) == 20 {
+		a = pk
+	} else {
+		a = HASH160(pk)
+	}
+	b := []byte{0, 0x14}
+	b = append(b, a...)
+	addr, err := SegWitAddressEncode("bc", b)
+	if err != nil {
+		panic(err)
+	}
+	return addr
 }
 
 func RandUInt64() uint64 {

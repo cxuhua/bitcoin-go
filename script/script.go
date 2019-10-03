@@ -253,6 +253,12 @@ func (s Script) Len() int {
 	return len(s)
 }
 
+func (s Script) Clone() *Script {
+	v := make([]byte, len(s))
+	copy(v, s)
+	return NewScript(v)
+}
+
 func (s Script) Bytes() []byte {
 	return s
 }
@@ -329,7 +335,7 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 			if fbMini && !CheckMinimalPush(ops, op) {
 				return false, SCRIPT_ERR_MINIMALDATA
 			}
-			log.Println(string(ops), op, hex.EncodeToString(ops))
+			log.Println(op, hex.EncodeToString(ops))
 			stack.Push(ops)
 		} else if fexec || (OP_IF <= op && op <= OP_ENDIF) {
 			switch op {
@@ -747,12 +753,6 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				sig := stack.Top(-2).ToBytes()
 				pk := stack.Top(-1).ToBytes()
 				sub := s.SubScript(pb, pe)
-				//if sigver == SIG_VER_BASE {
-				//	///*found := FindAndDelete(sub, NewScript(sig))
-				//	//if found > 0 && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
-				//	//	return false, SCRIPT_ERR_SIG_FINDANDDELETE
-				//	//}*/
-				//}
 				if err := CheckSignatureEncoding(sig, flags); err != nil {
 					return false, err
 				}
@@ -803,15 +803,6 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 					return false, SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
 				sub := s.SubScript(pb, pe)
-				for k := 0; k < sigcount; k++ {
-					sig := stack.Top(-isig - k).ToBytes()
-					if sigver == SIG_VER_BASE {
-						found := FindAndDelete(sub, NewScript(sig))
-						if found > 0 && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
-							return false, SCRIPT_ERR_SIG_FINDANDDELETE
-						}
-					}
-				}
 				success := true
 				for success && sigcount > 0 {
 					sig := stack.Top(-isig).ToBytes()
