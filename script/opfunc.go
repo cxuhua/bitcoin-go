@@ -234,16 +234,12 @@ func (s Script) HasValidOps() bool {
 	return true
 }
 
-func (s *Script) IsP2WPKHV0() bool {
-	return false
-}
-
 func (s Script) IsP2PKH() bool {
 	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
 }
 
 func (s Script) IsP2SH() bool {
-	return (s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL)
+	return s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
 }
 
 //return ver programe ok
@@ -256,8 +252,7 @@ func (s Script) IsWitnessProgram() (int, []byte, bool) {
 	}
 	if int(s[1]+2) == s.Len() {
 		ver := DecodeOP(s[0])
-		program := s[2:]
-		return ver, program, true
+		return ver, s[2:], true
 	}
 	return 0, nil, false
 }

@@ -6,13 +6,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
+	"errors"
 	"io/ioutil"
 	"log"
 	"testing"
 )
 
 func TestInfo(t *testing.T) {
-	data2 := util.HexDecode("0100000000010144c061cb929936fec8d6a7f7b56a0f8356d19714c6918ef6a041c5a1e52515190200000017160014bb010ceb86c2d2ded56254d8616c11e9a6386d7affffffff022d0f0f00000000001976a9147044778addfbfeac72cd0bcd670aa34c570e55dd88ac9217d90100000000160014107f25d6ed604a6759925269fe812616a12c495d0247304402204f8cf1bce4b45aa0aad03da7b7c731265bd56acc9a5a427b036a724b1481eacc022014e5d97ec7ccf5bdc5646ca01e3d059763c608e478633217aa407dce2044c8110121022fbd03ad4867759315df475e2de5f7143a9630c54735cb5f9f9960009fded97400000000")
+	data2 := util.HexDecode("010000000175869b4cc004834732e29104a591354cde8a961321bbac6570e93e19efe3bb6801000000fc00473044022045c710406620b12545a9f7f5253d62a455cd71980e6dc51db84a6a184584f1c6022018db727470049418d8e5a0b2175ababe12603b8f80f359bc391d52a323db1e730147304402201bf1c66ddf90814cce23e177cfa6f5b3ba9da1e4304ced9e8d6af3230d232103022019a192b177af37a0f28f0ffb832f645b487831ee0c9861d8837daee01045f077014c6952210246ccf4de0c54cc7f3354cdd993c2c50cf965fd82238b89659fbd73a1b4bf05a121024fc59f72272a897fe43803374969f396058152fe4765a8d15216f94624257b1b21022593bc69ecbf3bbcc3c58082267cb49dadaf4ca8dbf1b2297338a9d628c4297653aeffffffff0322020000000000001976a9144f513e61b1d4bd0e2819ee0e111b6c8f6c1f3ac688ac58d7e9020000000017a9143f4eecba122ad73039d481c8d37f99cb4f887cd8870000000000000000166a146f6d6e69000000000000001f00000000ae94fe4000000000")
 	h2 := NewNetHeader(data2)
 	tx2 := &TX{}
 	tx2.Read(h2)
@@ -27,7 +28,7 @@ func TestCloneTX(t *testing.T) {
 
 	tx1 := tx2.Clone()
 
-	if tx1.HashID() != tx2.HashID() {
+	if !tx1.Hash.Equal(tx2.Hash) {
 		t.Errorf("clone tx error")
 	}
 }
@@ -74,7 +75,7 @@ func TestCoinBaseTX(t *testing.T) {
 	if !tx.IsCoinBase() {
 		t.Errorf("coinbase tx check error")
 	}
-	if tx.HashID().String() != "c09b7a4be56da07d0e27fdaa465d9fc60f420e9216dbac70b714125729ca63fb" {
+	if tx.Hash.String() != "c09b7a4be56da07d0e27fdaa465d9fc60f420e9216dbac70b714125729ca63fb" {
 		t.Errorf("coinbase tx hashid error")
 	}
 	oh := NewNetHeader()
@@ -93,7 +94,7 @@ func TestTXID(t *testing.T) {
 	h := NewNetHeader(data)
 	tx := &TX{}
 	tx.Read(h)
-	if tx.HashID().String() != id {
+	if tx.Hash.String() != id {
 		t.Errorf("make tx hashid error")
 	}
 
@@ -197,9 +198,33 @@ func TestH1B(t *testing.T) {
 	m := NewMsgBlock()
 	m.Read(h)
 }
+func TestBlockFromDB(t *testing.T) {
+	blockId := NewHexBHash("0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff")
+	err := db.UseSession(context.Background(), func(db db.DbImp) error {
+		m, err := LoadBlock(blockId, db)
+		if err != nil {
+			return err
+		}
+		if !m.Hash.Equal(blockId) {
+			return errors.New("block hashid error")
+		}
+		err = m.LoadTXS(db)
+		if err != nil {
+			return err
+		}
+		if !m.Merkle.Equal(m.NewMarkle()) {
+			return errors.New("equal markle error")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Errorf("save error %v", err)
+	}
+}
 
 func TestBlockData(t *testing.T) {
-	blockId := "0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff"
+	blockId := NewHexBHash("0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff")
+
 	data, err := ioutil.ReadFile("../dat/block.dat")
 	if err != nil {
 		panic(err)
@@ -207,10 +232,16 @@ func TestBlockData(t *testing.T) {
 	h := NewNetHeader(data)
 	m := NewMsgBlock()
 	m.Read(h)
-	if m.Hash.String() != blockId {
+	if !m.Hash.Equal(blockId) {
 		t.Errorf("block hashid error")
 	}
 	if !m.Merkle.Equal(m.NewMarkle()) {
 		t.Errorf("equal markle error")
+	}
+	err = db.UseSession(context.Background(), func(db db.DbImp) error {
+		return m.LoadTXS(db)
+	})
+	if err != nil {
+		t.Errorf("save error %v", err)
 	}
 }

@@ -307,17 +307,31 @@ func NewValidationError(reason int, reject byte, err string) *ValidationError {
  */
 type TX struct {
 	Hash     HashID //
+	Block    HashID //block
+	Index    uint32 //block index
 	Ver      int32
 	Flag     []byte //If present, always 0001
 	Ins      []*TxIn
 	Outs     []*TxOut
 	LockTime uint32
-	wbpos    int //witness wpos begin
-	wepos    int //witness wpos end
+	wbpos    int    //witness wpos begin
+	wepos    int    //witness wpos end
+	bbpos    int    //body begin pos
+	bepos    int    //body end pos
+	Body     []byte //body data
+}
+
+func NewTX(bid HashID, idx uint32) *TX {
+	return &TX{
+		Block: bid,
+		Index: uint32(idx),
+	}
 }
 
 type TXHeader struct {
 	Id    []byte `bson:"_id"`
+	Block []byte `bson:"block"` //block id
+	Index uint32 `bson:"index"` //block tx index
 	Ver   int32  `bson:"ver"`
 	State int8   `bson:"state"`
 	Raw   []byte `bson:"raw"`
@@ -327,6 +341,8 @@ func (txh *TXHeader) ToTX() *TX {
 	tx := &TX{}
 	h := NewNetHeader(txh.Raw)
 	tx.Read(h)
+	copy(tx.Block[:], txh.Block)
+	tx.Index = txh.Index
 	return tx
 }
 
@@ -351,21 +367,21 @@ func LoadTX(id HashID, d db.DbImp) (*TX, error) {
 
 func NewTXFrom(tx *TX) *TXHeader {
 	txh := &TXHeader{}
-	h := NewNetHeader()
-	txh.Id = tx.HashIDToHeader(h).Bytes()
+	txh.Id = tx.Hash[:]
 	txh.Ver = tx.Ver
-	txh.Raw = h.Bytes()
+	txh.Raw = tx.Body
+	txh.Block = tx.Block[:]
+	txh.Index = tx.Index
 	return txh
 }
 
 func (m *TX) Save(d db.DbImp) error {
-	id := m.HashID()
 	h := NewTXFrom(m)
-	err := d.SetTX(id[:], h)
+	err := d.SetTX(m.Hash[:], h)
 	if err != nil {
 		return err
 	}
-	return Txs.Set(id, m)
+	return Txs.Set(m.Hash, m)
 }
 
 //get pre tx
@@ -405,6 +421,9 @@ func (m *TX) Verify(db db.DbImp) error {
 func (m *TX) Clone() *TX {
 	v := &TX{}
 	v.Ver = m.Ver
+	v.Block = m.Block
+	v.Index = m.Index
+	v.Hash = m.Hash
 	if len(m.Flag) > 0 {
 		v.Flag = make([]byte, len(m.Flag))
 		copy(v.Flag, m.Flag)
@@ -418,6 +437,7 @@ func (m *TX) Clone() *TX {
 		v.Outs[i] = ov.Clone()
 	}
 	v.LockTime = m.LockTime
+	v.Body = m.Body
 	return v
 }
 
@@ -484,37 +504,6 @@ func (m *TX) GetValueOut() Amount {
 	return tv
 }
 
-//func (m *TX) SigBytes(ht byte) []byte {
-//	//not include witnesses
-//	h := NewNetHeader()
-//	h.WriteUInt32(uint32(m.Ver))
-//	h.WriteVarInt(uint64(len(m.Ins)))
-//	for _, v := range m.Ins {
-//		v.Write(h)
-//	}
-//	h.WriteVarInt(uint64(len(m.Outs)))
-//	for _, v := range m.Outs {
-//		v.Write(h)
-//	}
-//	h.WriteUInt32(m.LockTime)
-//	h.WriteUInt32(uint32(ht))
-//	return h.Bytes()
-//}
-
-func (m *TX) HashIDToHeader(h *NetHeader) HashID {
-	m.Write(h)
-	hid := util.HASH256(h.Bytes())
-	id := HashID{}
-	copy(id[:], hid)
-	return id
-}
-
-func (m *TX) HashID() HashID {
-	//not include witnesses
-	h := NewNetHeader()
-	return m.HashIDToHeader(h)
-}
-
 func (m *TX) IsCoinBase() bool {
 	return len(m.Ins) > 0 && m.Ins[0].OutHash.IsZero()
 }
@@ -530,7 +519,7 @@ func (m *TX) ReadWitnesses(h *NetHeader) {
 }
 
 func (m *TX) Read(h *NetHeader) {
-	s := h.Pos()
+	m.bbpos = h.Pos()
 	m.Ver = int32(h.ReadUInt32())
 	//check flag for witnesses
 	m.Flag = h.Peek(2)
@@ -556,8 +545,9 @@ func (m *TX) Read(h *NetHeader) {
 		m.ReadWitnesses(h)
 	}
 	m.LockTime = h.ReadUInt32()
-	e := h.Pos()
-	copy(m.Hash[:], util.HASH256(h.SubBytes(s, e)))
+	m.bepos = h.Pos()
+	m.Body = h.SubBytes(m.bbpos, m.bepos)
+	copy(m.Hash[:], util.HASH256(m.Body))
 }
 
 func (m *TX) HasWitness() bool {
@@ -705,7 +695,7 @@ func NewMsgNotFound() *MsgNotFound {
 //
 
 type MsgBlock struct {
-	Hash      HashID
+	Hash      HashID //compute get
 	Ver       uint32
 	Prev      HashID
 	Merkle    HashID //Merkle tree root
@@ -713,7 +703,82 @@ type MsgBlock struct {
 	Bits      uint32
 	Nonce     uint32
 	Txs       []*TX
-	hsize     int
+	Body      []byte //don't include header 80 bytes
+	bbpos     int
+	bepos     int
+	Count     int
+}
+
+//block header
+type BlockHeader struct {
+	Hash      []byte `bson:"_id"`
+	Ver       uint32 `bson:"ver"`
+	Prev      []byte `bson:"prev"`
+	Merkle    []byte `bson:"merkel"`
+	Timestamp uint32 `bson:"time"`
+	Bits      uint32 `bson:"bits"`
+	Nonce     uint32 `bson:"nonce"`
+	Height    uint64 `bson:"height"`
+	Count     int    `bson:"count"` //tx count
+}
+
+func (b *BlockHeader) ToBlock() *MsgBlock {
+	m := &MsgBlock{}
+	copy(m.Hash[:], b.Hash)
+	m.Ver = b.Ver
+	copy(m.Prev[:], b.Prev)
+	copy(m.Merkle[:], b.Merkle)
+	m.Timestamp = b.Timestamp
+	m.Bits = b.Bits
+	m.Nonce = b.Nonce
+	m.Count = b.Count
+	return m
+}
+
+//load txs from database
+func (m *MsgBlock) LoadTXS(db db.DbImp) error {
+	vs := make([]interface{}, m.Count)
+	for i, _ := range vs {
+		vs[i] = &TXHeader{}
+	}
+	if err := db.MulTX(vs, m.Hash[:]); err != nil {
+		return err
+	}
+	m.Txs = make([]*TX, m.Count)
+	for i, v := range vs {
+		txh := v.(*TXHeader)
+		m.Txs[i] = txh.ToTX()
+	}
+	return nil
+}
+
+func (m *MsgBlock) SaveTXS(db db.DbImp) error {
+	vs := make([]interface{}, len(m.Txs))
+	for i, v := range m.Txs {
+		vs[i] = NewTXFrom(v)
+	}
+	return db.MulTX(vs)
+}
+
+func (m *MsgBlock) Save(db db.DbImp) error {
+	b := &BlockHeader{}
+	b.Hash = m.Hash[:]
+	b.Ver = m.Ver
+	b.Prev = m.Prev[:]
+	b.Merkle = m.Merkle[:]
+	b.Timestamp = m.Timestamp
+	b.Bits = m.Bits
+	b.Nonce = m.Nonce
+	b.Count = m.Count
+	return db.SetBK(b.Hash[:], b)
+}
+
+func LoadBlock(id HashID, db db.DbImp) (*MsgBlock, error) {
+	h := &BlockHeader{}
+	if err := db.GetBK(id[:], h); err != nil {
+		return nil, err
+	}
+	return h.ToBlock(), nil
 }
 
 func (m *MsgBlock) Command() string {
@@ -727,15 +792,18 @@ func (m *MsgBlock) Read(h *NetHeader) {
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
-	m.hsize = h.Pos()
+	copy(m.Hash[:], util.HASH256(h.Payload[:h.Pos()]))
+	m.bbpos = h.Pos()
 	l, _ := h.ReadVarInt()
 	m.Txs = make([]*TX, l)
 	for i, _ := range m.Txs {
-		v := &TX{}
+		v := NewTX(m.Hash, uint32(i))
 		v.Read(h)
 		m.Txs[i] = v
 	}
-	copy(m.Hash[:], util.HASH256(h.Payload[:m.hsize]))
+	m.bepos = h.Pos()
+	m.Body = h.SubBytes(m.bbpos, m.bepos)
+	m.Count = len(m.Txs)
 }
 
 func (m *MsgBlock) Write(h *NetHeader) {
@@ -746,9 +814,11 @@ func (m *MsgBlock) Write(h *NetHeader) {
 	h.WriteUInt32(m.Bits)
 	h.WriteUInt32(m.Nonce)
 	h.WriteVarInt(uint64(len(m.Txs)))
+	m.bbpos = h.Pos()
 	for _, v := range m.Txs {
 		v.Write(h)
 	}
+	m.bepos = h.Pos()
 }
 
 //compute one floor
@@ -775,8 +845,8 @@ func (m *MsgBlock) NewMarkle() HashID {
 	for _, v := range m.Txs {
 		hs = append(hs, v.Hash[:])
 	}
-	x := m.computeMarkle(hs)
-	copy(ret[:], x)
+	hv := m.computeMarkle(hs)
+	copy(ret[:], hv)
 	return ret
 }
 
