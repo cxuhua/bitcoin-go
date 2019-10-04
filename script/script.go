@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log"
 )
 
@@ -335,7 +336,7 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 			if fbMini && !CheckMinimalPush(ops, op) {
 				return false, SCRIPT_ERR_MINIMALDATA
 			}
-			log.Println(op, hex.EncodeToString(ops))
+			//log.Println(op, hex.EncodeToString(ops))
 			stack.Push(ops)
 		} else if fexec || (OP_IF <= op && op <= OP_ENDIF) {
 			switch op {
@@ -356,8 +357,8 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				if locktime < 0 {
 					return false, SCRIPT_ERR_NEGATIVE_LOCKTIME
 				}
-				if !checker.CheckLockTime(locktime) {
-					return false, SCRIPT_ERR_UNSATISFIED_LOCKTIME
+				if err := checker.CheckLockTime(locktime); err != nil {
+					return false, fmt.Errorf("check locak time error %v", SCRIPT_ERR_UNSATISFIED_LOCKTIME)
 				}
 			case OP_CHECKSEQUENCEVERIFY:
 				if flags&SCRIPT_VERIFY_CHECKSEQUENCEVERIFY == 0 {
@@ -374,8 +375,8 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				if uint32(seq)&SEQUENCE_LOCKTIME_DISABLE_FLAG != 0 {
 					break
 				}
-				if !checker.CheckSequence(seq) {
-					return false, SCRIPT_ERR_UNSATISFIED_LOCKTIME
+				if err := checker.CheckSequence(seq); err != nil {
+					return false, fmt.Errorf("check sequence error %v", SCRIPT_ERR_UNSATISFIED_LOCKTIME)
 				}
 			case OP_NOP1, OP_NOP4, OP_NOP5, OP_NOP6, OP_NOP7, OP_NOP8, OP_NOP9, OP_NOP10:
 				if flags&SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS != 0 {
@@ -759,14 +760,14 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				if err := CheckPubKeyEncoding(pk, flags, sigver); err != nil {
 					return false, err
 				}
-				success := checker.CheckSig(sig, pk, sub, sigver)
-				if !success && flags&SCRIPT_VERIFY_NULLFAIL != 0 && len(sig) > 0 {
-					return false, SCRIPT_ERR_SIG_NULLFAIL
+				err := checker.CheckSig(sig, pk, sub, sigver)
+				if err != nil && flags&SCRIPT_VERIFY_NULLFAIL != 0 && len(sig) > 0 {
+					return false, fmt.Errorf("sig error %v", SCRIPT_ERR_SIG_NULLFAIL)
 				}
 				stack.Pop()
 				stack.Pop()
 				if op == OP_CHECKSIGVERIFY {
-					if success {
+					if err == nil {
 						stack.Pop()
 					} else {
 						return false, SCRIPT_ERR_CHECKSIGVERIFY
@@ -813,8 +814,8 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 					if err := CheckPubKeyEncoding(pk, flags, sigver); err != nil {
 						return false, err
 					}
-					fok := checker.CheckSig(sig, pk, sub, sigver)
-					if fok {
+					err := checker.CheckSig(sig, pk, sub, sigver)
+					if err == nil {
 						isig++
 						sigcount++
 					}

@@ -29,6 +29,16 @@ func InitDB(ctx context.Context) *mongo.Client {
 	return client
 }
 
+func UseTransaction(ctx context.Context, fn func(db DbImp) error) error {
+	client = InitDB(ctx)
+	return client.UseSession(ctx, func(sess mongo.SessionContext) error {
+		_, err := sess.WithTransaction(ctx, func(sessCtx mongo.SessionContext) (i interface{}, e error) {
+			return nil, fn(NewDBImp(sessCtx))
+		})
+		return err
+	})
+}
+
 func UseSession(ctx context.Context, fn func(db DbImp) error) error {
 	client = InitDB(ctx)
 	return client.UseSession(ctx, func(sess mongo.SessionContext) error {

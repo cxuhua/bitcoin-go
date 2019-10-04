@@ -11,7 +11,7 @@ const (
 
 //delete data
 func (m *mongoDBImp) DelTX(id []byte) error {
-	_, err := m.database().Collection(TX_TABLE).DeleteOne(m, bson.M{"_id": id})
+	_, err := m.txs().DeleteOne(m, bson.M{"_id": id})
 	if err != nil {
 		return err
 	}
@@ -19,16 +19,25 @@ func (m *mongoDBImp) DelTX(id []byte) error {
 }
 
 func (m *mongoDBImp) GetTX(id []byte, v interface{}) error {
-	ret := m.database().Collection(TX_TABLE).FindOne(m, bson.M{"_id": id})
+	ret := m.txs().FindOne(m, bson.M{"_id": id})
 	return ret.Decode(v)
 }
 
 //save tans data
 func (m *mongoDBImp) SetTX(id []byte, v interface{}) error {
-	opt := options.Update().SetUpsert(true)
-	_, err := m.database().Collection(TX_TABLE).UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": v}, opt)
-	if err != nil {
-		return err
+	var err error = nil
+	switch v.(type) {
+	case KeyValue:
+		ds := bson.M{}
+		for k, v := range v.(KeyValue) {
+			ds[k] = v
+		}
+		if len(ds) > 0 {
+			_, err = m.txs().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": ds})
+		}
+	default:
+		opt := options.Update().SetUpsert(true)
+		_, err = m.txs().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": v}, opt)
 	}
 	return err
 }

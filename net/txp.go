@@ -5,7 +5,6 @@ import (
 	"bitcoin/script"
 	"bitcoin/util"
 	"bytes"
-	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -33,6 +32,10 @@ func (h HashID) String() string {
 func (b HashID) IsZero() bool {
 	bz := make([]byte, len(b))
 	return bytes.Equal(b[:], bz)
+}
+
+func (b HashID) Equal(v HashID) bool {
+	return bytes.Equal(b[:], v[:])
 }
 
 func (b HashID) Bytes() []byte {
@@ -119,13 +122,6 @@ func (m *TxOut) Clone() *TxOut {
 	return v
 }
 
-func (m *TxOut) OutBytes() []byte {
-	buf := &bytes.Buffer{}
-	binary.Write(buf, ByteOrder, m.Value)
-	binary.Write(buf, ByteOrder, m.Script)
-	return buf.Bytes()
-}
-
 func (m *TxOut) Read(h *NetHeader) {
 	m.Value = h.ReadUInt64()
 	m.Script = h.ReadScript()
@@ -145,15 +141,11 @@ type TxIn struct {
 }
 
 //lock script
-func (m *TxIn) Eval(lock *script.Script, checker script.SigChecker) error {
-	if lock != nil {
-		return errors.New("lock script miss")
-	}
-	if m.Script == nil {
-		return errors.New("tx input script miss")
+func (m *TxIn) Eval(stack *script.Stack, lock *script.Script, checker script.SigChecker) error {
+	if lock == nil || m.Script == nil {
+		return errors.New("script miss")
 	}
 	if lock.IsP2PKH() {
-		stack := script.NewStack()
 		ok, err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
 		if err != nil {
 			return err
@@ -161,7 +153,7 @@ func (m *TxIn) Eval(lock *script.Script, checker script.SigChecker) error {
 		if !ok {
 			return errors.New("eval unlock script failed")
 		}
-		ok, err = lock.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
+		ok, err = lock.Eval(stack, checker, script.SCRIPT_VERIFY_NULLFAIL, script.SIG_VER_BASE)
 		if err != nil {
 			return err
 		}
@@ -170,7 +162,7 @@ func (m *TxIn) Eval(lock *script.Script, checker script.SigChecker) error {
 		}
 		return nil
 	}
-	return nil
+	return errors.New("lock not support")
 }
 
 func (m *TxIn) Clone() *TxIn {
@@ -183,13 +175,6 @@ func (m *TxIn) Clone() *TxIn {
 		v.Witness = m.Witness.Clone()
 	}
 	return v
-}
-
-func (m *TxIn) OutBytes() []byte {
-	buf := &bytes.Buffer{}
-	binary.Write(buf, ByteOrder, m.OutHash[:])
-	binary.Write(buf, ByteOrder, m.OutIndex)
-	return buf.Bytes()
 }
 
 func (m *TxIn) Read(h *NetHeader) {
@@ -321,6 +306,7 @@ func NewValidationError(reason int, reject byte, err string) *ValidationError {
  * - uint32_t nLockTime
  */
 type TX struct {
+	Hash     HashID //
 	Ver      int32
 	Flag     []byte //If present, always 0001
 	Ins      []*TxIn
@@ -331,9 +317,10 @@ type TX struct {
 }
 
 type TXHeader struct {
-	Id  []byte `bson:"_id"`
-	Ver int32  `bson:"ver"`
-	Raw []byte `bson:"raw"`
+	Id    []byte `bson:"_id"`
+	Ver   int32  `bson:"ver"`
+	State int8   `bson:"state"`
+	Raw   []byte `bson:"raw"`
 }
 
 func (txh *TXHeader) ToTX() *TX {
@@ -346,7 +333,7 @@ func (txh *TXHeader) ToTX() *TX {
 func LoadTX(id HashID, d db.DbImp) (*TX, error) {
 	//from cache get
 	if v, err := Txs.Get(id); err == nil {
-		return v, nil
+		return v.(*TX), nil
 	}
 	//from database
 	txh := &TXHeader{}
@@ -392,11 +379,26 @@ func (m *TX) Verify(db db.DbImp) error {
 	if err := m.Check(); err != nil {
 		return fmt.Errorf("check tx error %v", err)
 	}
-	//checker := NewBaseSigChecker(m)
-	////verify txin
-	//for i, v := range m.Ins {
-	//
-	//}
+	//verify txin
+	for i, v := range m.Ins {
+		ptx, err := m.GetPrevTx(i, db)
+		if err != nil {
+			return err
+		}
+		if v.OutIndex < 0 || int(v.OutIndex) >= len(ptx.Outs) {
+			return errors.New("pre tx data miss")
+		}
+		//get tx for hash data
+		locks := ptx.Outs[v.OutIndex].Script
+		if locks == nil || locks.Len() == 0 {
+			return errors.New("lock script error")
+		}
+		checker := NewTxSigChecker(m, i)
+		stack := script.NewStack()
+		if err := v.Eval(stack, locks, checker); err != nil {
+			return fmt.Errorf("tx in %d eval error %v", i, err)
+		}
+	}
 	return nil
 }
 
@@ -482,35 +484,25 @@ func (m *TX) GetValueOut() Amount {
 	return tv
 }
 
-func (m *TX) SigBytes(ht byte) []byte {
-	//not include witnesses
-	h := NewNetHeader()
-	h.WriteUInt32(uint32(m.Ver))
-	h.WriteVarInt(uint64(len(m.Ins)))
-	for _, v := range m.Ins {
-		v.Write(h)
-	}
-	h.WriteVarInt(uint64(len(m.Outs)))
-	for _, v := range m.Outs {
-		v.Write(h)
-	}
-	h.WriteUInt32(m.LockTime)
-	h.WriteUInt32(uint32(ht))
-	return h.Bytes()
-}
+//func (m *TX) SigBytes(ht byte) []byte {
+//	//not include witnesses
+//	h := NewNetHeader()
+//	h.WriteUInt32(uint32(m.Ver))
+//	h.WriteVarInt(uint64(len(m.Ins)))
+//	for _, v := range m.Ins {
+//		v.Write(h)
+//	}
+//	h.WriteVarInt(uint64(len(m.Outs)))
+//	for _, v := range m.Outs {
+//		v.Write(h)
+//	}
+//	h.WriteUInt32(m.LockTime)
+//	h.WriteUInt32(uint32(ht))
+//	return h.Bytes()
+//}
 
 func (m *TX) HashIDToHeader(h *NetHeader) HashID {
-	//not include witnesses
-	h.WriteUInt32(uint32(m.Ver))
-	h.WriteVarInt(uint64(len(m.Ins)))
-	for _, v := range m.Ins {
-		v.Write(h)
-	}
-	h.WriteVarInt(uint64(len(m.Outs)))
-	for _, v := range m.Outs {
-		v.Write(h)
-	}
-	h.WriteUInt32(m.LockTime)
+	m.Write(h)
 	hid := util.HASH256(h.Bytes())
 	id := HashID{}
 	copy(id[:], hid)
@@ -538,6 +530,7 @@ func (m *TX) ReadWitnesses(h *NetHeader) {
 }
 
 func (m *TX) Read(h *NetHeader) {
+	s := h.Pos()
 	m.Ver = int32(h.ReadUInt32())
 	//check flag for witnesses
 	m.Flag = h.Peek(2)
@@ -563,6 +556,8 @@ func (m *TX) Read(h *NetHeader) {
 		m.ReadWitnesses(h)
 	}
 	m.LockTime = h.ReadUInt32()
+	e := h.Pos()
+	copy(m.Hash[:], util.HASH256(h.SubBytes(s, e)))
 }
 
 func (m *TX) HasWitness() bool {
@@ -585,6 +580,7 @@ func (m *TX) WriteWitnesses(h *NetHeader) {
 }
 
 func (m *TX) Write(h *NetHeader) {
+	s := h.Pos()
 	h.WriteUInt32(uint32(m.Ver))
 	if m.HasWitness() {
 		h.WriteBytes(m.Flag)
@@ -601,6 +597,8 @@ func (m *TX) Write(h *NetHeader) {
 		m.WriteWitnesses(h)
 	}
 	h.WriteUInt32(m.LockTime)
+	e := h.Pos()
+	copy(m.Hash[:], util.HASH256(h.SubBytes(s, e)))
 }
 
 //
@@ -707,6 +705,7 @@ func NewMsgNotFound() *MsgNotFound {
 //
 
 type MsgBlock struct {
+	Hash      HashID
 	Ver       uint32
 	Prev      HashID
 	Merkle    HashID //Merkle tree root
@@ -714,24 +713,11 @@ type MsgBlock struct {
 	Bits      uint32
 	Nonce     uint32
 	Txs       []*TX
+	hsize     int
 }
 
 func (m *MsgBlock) Command() string {
 	return NMT_BLOCK
-}
-
-func (m *MsgBlock) HashID() HashID {
-	buf := NewMsgBuffer([]byte{}, MSG_BUFFER_WRITE)
-	buf.WriteUInt32(m.Ver)
-	buf.WriteBytes(m.Prev[:])
-	buf.WriteBytes(m.Merkle[:])
-	buf.WriteUInt32(m.Timestamp)
-	buf.WriteUInt32(m.Bits)
-	buf.WriteUInt32(m.Nonce)
-	hid := util.HASH256(buf.Bytes())
-	id := HashID{}
-	copy(id[:], hid)
-	return id
 }
 
 func (m *MsgBlock) Read(h *NetHeader) {
@@ -741,6 +727,7 @@ func (m *MsgBlock) Read(h *NetHeader) {
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
+	m.hsize = h.Pos()
 	l, _ := h.ReadVarInt()
 	m.Txs = make([]*TX, l)
 	for i, _ := range m.Txs {
@@ -748,6 +735,7 @@ func (m *MsgBlock) Read(h *NetHeader) {
 		v.Read(h)
 		m.Txs[i] = v
 	}
+	copy(m.Hash[:], util.HASH256(h.Payload[:m.hsize]))
 }
 
 func (m *MsgBlock) Write(h *NetHeader) {
@@ -761,6 +749,35 @@ func (m *MsgBlock) Write(h *NetHeader) {
 	for _, v := range m.Txs {
 		v.Write(h)
 	}
+}
+
+//compute one floor
+func (m *MsgBlock) computeMarkle(hashs [][]byte) []byte {
+	l := len(hashs)
+	if l == 1 {
+		return hashs[0]
+	}
+	if l%2 != 0 {
+		hashs = append(hashs, hashs[l-1])
+		l++
+	}
+	ret := [][]byte{}
+	for i := 0; i < l/2; i++ {
+		b := append(hashs[i*2], hashs[i*2+1]...)
+		ret = append(ret, util.HASH256(b))
+	}
+	return m.computeMarkle(ret)
+}
+
+func (m *MsgBlock) NewMarkle() HashID {
+	ret := HashID{}
+	hs := [][]byte{}
+	for _, v := range m.Txs {
+		hs = append(hs, v.Hash[:])
+	}
+	x := m.computeMarkle(hs)
+	copy(ret[:], x)
+	return ret
 }
 
 func NewMsgBlock() *MsgBlock {

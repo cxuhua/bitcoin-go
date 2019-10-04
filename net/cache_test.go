@@ -6,7 +6,7 @@ import (
 )
 
 func TestTXCacher(t *testing.T) {
-	c := NewTxCacher(10, time.Second*3)
+	c := NewMemoryCacher(10, time.Second*3)
 	id1 := HashID{0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0}
 	tx1 := &TX{}
 	if err := c.Set(id1, tx1); err != nil {

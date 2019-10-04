@@ -19,8 +19,8 @@ type Client struct {
 	ctx       context.Context
 	cancel    context.CancelFunc
 	Type      int
-	WC        chan MsgIO
-	RC        chan *NetHeader
+	wc        chan MsgIO
+	rc        chan *NetHeader
 	IP        net.IP
 	Port      uint16
 	connected bool
@@ -29,6 +29,10 @@ type Client struct {
 	Acked     bool //is recv verack
 	VerInfo   *MsgVersion
 	ping      int
+}
+
+func (c *Client) WriteMsg(m MsgIO) {
+	c.wc <- m
 }
 
 func (c *Client) processMsg(m *NetHeader) error {
@@ -42,12 +46,12 @@ func (c *Client) processMsg(m *NetHeader) error {
 		m.Full(msg)
 		c.VerInfo = msg
 	case NMT_VERACK:
-		c.WC <- NewMsgVerAck()
-		c.WC <- NewMsgPing()
+		c.WriteMsg(NewMsgVerAck())
+		c.WriteMsg(NewMsgPing())
 		c.Acked = true
 		c.OnReady()
 	case NMT_PING:
-		c.WC <- NewMsgPong()
+		c.WriteMsg(NewMsgPong())
 	case NMT_HEADERS:
 		mp := NewMsgHeaders()
 		m.Full(mp)
@@ -99,7 +103,7 @@ func (c *Client) processMsg(m *NetHeader) error {
 }
 
 func (c *Client) OnReady() {
-	c.WC <- NewMsgGetAddr()
+	c.WriteMsg(NewMsgGetAddr())
 }
 
 func (c *Client) OnPing() {
@@ -121,7 +125,7 @@ func (c *Client) GetAddr() string {
 func (c *Client) OnConnected() {
 	if c.Type == ClientTypeOut {
 		addr := c.Conn.LocalAddr()
-		c.WC <- NewMsgVersion(addr.String(), c.GetAddr())
+		c.WriteMsg(NewMsgVersion(addr.String(), c.GetAddr()))
 	}
 }
 
@@ -133,7 +137,7 @@ func (c *Client) stop() {
 		err = fmt.Errorf("err = %v , ctx err = %v", err, c.ctx.Err())
 	}
 	if err != nil {
-		log.Println("client run finished ", err)
+		log.Println("client run finished error = ", err)
 	}
 	if c.connected {
 		c.Close()
@@ -167,20 +171,20 @@ func (c *Client) run() {
 				c.cancel()
 				break
 			}
-			c.RC <- m
+			c.rc <- m
 		}
 	}()
 	//not recv ack timeout
 	vertimer := time.NewTimer(time.Second * 5)
 	for {
 		select {
-		case wp := <-c.WC:
+		case wp := <-c.wc:
 			err := WriteMsg(c, wp)
 			if err != nil {
 				log.Println("write msg error", err)
 				c.cancel()
 			}
-		case rp := <-c.RC:
+		case rp := <-c.rc:
 			err := c.processMsg(rp)
 			if err != nil {
 				log.Println("process msg error", err)
@@ -194,7 +198,7 @@ func (c *Client) run() {
 			if !c.Acked {
 				break
 			}
-			c.WC <- NewMsgPing()
+			c.WriteMsg(NewMsgPing())
 			c.ptimer.Reset(time.Second * 60)
 		case <-c.ctx.Done():
 			log.Println("done! close socket")
@@ -229,8 +233,8 @@ func NewClient(typ int, addr string) *Client {
 	c.IP = ip
 	c.Port = port
 	c.Type = typ
-	c.WC = make(chan MsgIO, 10)
-	c.RC = make(chan *NetHeader, 10)
+	c.wc = make(chan MsgIO, 10)
+	c.rc = make(chan *NetHeader, 10)
 	c.try = 3
 	c.ptimer = time.NewTimer(time.Second * 60)
 	c.ctx, c.cancel = context.WithCancel(context.Background())

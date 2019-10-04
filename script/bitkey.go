@@ -164,6 +164,12 @@ type SigValue struct {
 	HashType byte //last byte
 }
 
+func NewSigValue(b []byte) (*SigValue, error) {
+	sig := &SigValue{}
+	err := sig.Decode(b)
+	return sig, err
+}
+
 func (sig *SigValue) FromHEX(s string) error {
 	data, err := hex.DecodeString(s)
 	if err != nil {
@@ -219,7 +225,7 @@ type PublicKey struct {
 	compressed bool
 }
 
-func LoadPublicKey(data []byte) (*PublicKey, error) {
+func NewPublicKey(data []byte) (*PublicKey, error) {
 	pk := &PublicKey{}
 	err := pk.From(data)
 	return pk, err

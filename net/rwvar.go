@@ -108,6 +108,10 @@ func (b *MsgBuffer) Peek(l int) []byte {
 	return b.Payload[b.rwpos : b.rwpos+l]
 }
 
+func (b *MsgBuffer) SubBytes(s, e int) []byte {
+	return b.Payload[s:e]
+}
+
 func (b *MsgBuffer) Bytes() []byte {
 	return b.Payload
 }
@@ -155,8 +159,12 @@ func (m *MsgBuffer) ReadScript() *script.Script {
 }
 
 func (m *MsgBuffer) WriteScript(s *script.Script) {
-	m.WriteVarInt(uint64((s.Len())))
-	m.WriteBytes(s.Bytes())
+	if s == nil {
+		m.WriteVarInt(0)
+	} else {
+		m.WriteVarInt(uint64((s.Len())))
+		m.WriteBytes(s.Bytes())
+	}
 }
 
 func (m *MsgBuffer) ReadBytes(b []byte) {

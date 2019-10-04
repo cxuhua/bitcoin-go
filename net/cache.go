@@ -12,38 +12,41 @@ var (
 )
 
 //save valid tx info
-type TxCacher interface {
-	Get(id HashID) (*TX, error)
-	Set(id HashID, tx *TX) error
+type MemoryCacher interface {
+	Get(id HashID) (interface{}, error)
+	Set(id HashID, v interface{}) error
 	Del(id HashID)
 	Clean()
 }
 
 var (
-	Txs = NewTxCacher(1024*2, time.Minute*30)
+	//tx memory cacher
+	Txs = NewMemoryCacher(1024*2, time.Minute*30)
+	//block memory cacher
+	Bxs = NewMemoryCacher(256, time.Minute*60)
 )
 
-func NewTxCacher(max int, timeout time.Duration) TxCacher {
-	return &memoryTxCacher{
-		txs:     map[string]*memoryTxElement{},
+func NewMemoryCacher(max int, timeout time.Duration) MemoryCacher {
+	return &memoryCacher{
+		txs:     map[string]*memoryElement{},
 		max:     max,
 		timeout: timeout,
 	}
 }
 
-type memoryTxElement struct {
-	tx *TX
-	tv time.Time
+type memoryElement struct {
+	value interface{}
+	tv    time.Time
 }
 
-type memoryTxCacher struct {
-	txs     map[string]*memoryTxElement
+type memoryCacher struct {
+	txs     map[string]*memoryElement
 	max     int
 	timeout time.Duration
 	rw      sync.Mutex
 }
 
-func (c *memoryTxCacher) clean() {
+func (c *memoryCacher) clean() {
 	now := time.Now()
 	ks := []string{}
 	for k, v := range c.txs {
@@ -59,19 +62,19 @@ func (c *memoryTxCacher) clean() {
 	}
 }
 
-func (c *memoryTxCacher) Clean() {
+func (c *memoryCacher) Clean() {
 	c.rw.Lock()
 	defer c.rw.Unlock()
 	c.clean()
 }
 
-func (c *memoryTxCacher) Del(id HashID) {
+func (c *memoryCacher) Del(id HashID) {
 	c.rw.Lock()
 	defer c.rw.Unlock()
 	delete(c.txs, id.String())
 }
 
-func (c *memoryTxCacher) Get(id HashID) (*TX, error) {
+func (c *memoryCacher) Get(id HashID) (interface{}, error) {
 	c.rw.Lock()
 	defer c.rw.Unlock()
 	ele, ok := c.txs[id.String()]
@@ -83,10 +86,10 @@ func (c *memoryTxCacher) Get(id HashID) (*TX, error) {
 		return nil, ErrNotFound
 	}
 	ele.tv = time.Now()
-	return ele.tx, nil
+	return ele.value, nil
 }
 
-func (c *memoryTxCacher) Set(id HashID, tx *TX) error {
+func (c *memoryCacher) Set(id HashID, v interface{}) error {
 	c.rw.Lock()
 	defer c.rw.Unlock()
 	if len(c.txs) >= c.max {
@@ -99,7 +102,7 @@ func (c *memoryTxCacher) Set(id HashID, tx *TX) error {
 	if ok {
 		ele.tv = time.Now()
 	} else {
-		c.txs[id.String()] = &memoryTxElement{tv: time.Now(), tx: tx}
+		c.txs[id.String()] = &memoryElement{tv: time.Now(), value: v}
 	}
 	return nil
 }

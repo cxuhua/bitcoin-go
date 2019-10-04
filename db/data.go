@@ -10,6 +10,8 @@ const (
 	DATABASE = "bitcoin"
 )
 
+type KeyValue map[string]interface{}
+
 type DbImp interface {
 	context.Context
 	//get trans raw data
@@ -22,6 +24,10 @@ type DbImp interface {
 
 type mongoDBImp struct {
 	context.Context
+}
+
+func (m *mongoDBImp) txs() *mongo.Collection {
+	return m.database().Collection(TX_TABLE)
 }
 
 func (m *mongoDBImp) database() *mongo.Database {
