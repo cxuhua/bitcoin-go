@@ -1,6 +1,7 @@
 package script
 
 import (
+	"bitcoin/util"
 	"encoding/binary"
 	"errors"
 )
@@ -234,8 +235,32 @@ func (s Script) HasValidOps() bool {
 	return true
 }
 
+func NewPUBKEYScript(pub *PublicKey) *Script {
+	b := pub.Marshal()
+	s := &Script{}
+	return s.PushBytes(b).PushOp(OP_CHECKSIG)
+}
+
+func (s Script) IsPUBKEY() bool {
+	return (s.Len() == 35 && s[0] == 33 && s[34] == OP_CHECKSIG) || (s.Len() == 67 && s[0] == 65 && s[66] == OP_CHECKSIG)
+}
+
+func NewP2PKHScript(pub *PublicKey) *Script {
+	s := &Script{}
+	b := pub.Marshal()
+	hv := util.HASH160(b)
+	return s.PushOp(OP_DUP).PushOp(OP_HASH160).PushBytes(hv).PushOp(OP_EQUALVERIFY).PushOp(OP_CHECKSIG)
+}
+
 func (s Script) IsP2PKH() bool {
 	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
+}
+
+func NewP2SHScript(pub *PublicKey) *Script {
+	s := &Script{}
+	b := pub.Marshal()
+	hv := util.HASH160(b)
+	return s.PushOp(OP_HASH160).PushBytes(hv).PushOp(OP_EQUAL)
 }
 
 func (s Script) IsP2SH() bool {

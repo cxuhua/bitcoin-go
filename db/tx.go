@@ -24,6 +24,7 @@ func (m *mongoDBImp) GetTX(id []byte, v interface{}) error {
 	return ret.Decode(v)
 }
 
+//return blockid txs if id exists
 func (m *mongoDBImp) MulTX(vs []interface{}, id ...[]byte) error {
 	if len(id) == 1 {
 		opts := options.Find().SetSort(bson.M{"index": 1})

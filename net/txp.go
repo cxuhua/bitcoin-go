@@ -145,7 +145,7 @@ func (m *TxIn) Eval(stack *script.Stack, lock *script.Script, checker script.Sig
 	if lock == nil || m.Script == nil {
 		return errors.New("script miss")
 	}
-	if lock.IsP2PKH() {
+	if lock.IsP2PKH() || lock.IsPUBKEY() {
 		ok, err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
 		if err != nil {
 			return err
@@ -161,6 +161,9 @@ func (m *TxIn) Eval(stack *script.Stack, lock *script.Script, checker script.Sig
 			return errors.New("eval lock script failed")
 		}
 		return nil
+	}
+	if lock.IsP2SH() {
+
 	}
 	return errors.New("lock not support")
 }
@@ -751,6 +754,9 @@ func (m *MsgBlock) LoadTXS(db db.DbImp) error {
 	}
 	return nil
 }
+func (m *MsgBlock) PrevBlock(db db.DbImp) (*MsgBlock, error) {
+	return LoadBlock(m.Prev, db)
+}
 
 func (m *MsgBlock) SaveTXS(db db.DbImp) error {
 	vs := make([]interface{}, len(m.Txs))
@@ -839,14 +845,19 @@ func (m *MsgBlock) computeMarkle(hashs [][]byte) []byte {
 	return m.computeMarkle(ret)
 }
 
+func (m *MsgBlock) MarkleNodes() script.MerkleNodeArray {
+	nodes := script.MerkleNodeArray{}
+	for _, v := range m.Txs {
+		nodes = append(nodes, v.Hash[:])
+	}
+	return nodes
+}
+
 func (m *MsgBlock) NewMarkle() HashID {
 	ret := HashID{}
-	hs := [][]byte{}
-	for _, v := range m.Txs {
-		hs = append(hs, v.Hash[:])
-	}
-	hv := m.computeMarkle(hs)
-	copy(ret[:], hv)
+	nodes := m.MarkleNodes()
+	tree := script.NewMerkleTree(nodes)
+	copy(ret[:], tree.Root())
 	return ret
 }
 

@@ -60,6 +60,7 @@ func GetConfig() *Config {
 	if config != nil {
 		return config
 	}
+
 	c := &Config{Id: "main"}
 
 	c.b58prefixs = map[int][]byte{}

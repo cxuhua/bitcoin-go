@@ -370,8 +370,9 @@ func (pb *PublicKey) IsValid() bool {
 	return curve.IsOnCurve(pb.X, pb.Y)
 }
 
-func (pk *PublicKey) Compressed(v bool) {
+func (pk *PublicKey) Compressed(v bool) *PublicKey {
 	pk.compressed = v
+	return pk
 }
 
 //check marshal pubkey
