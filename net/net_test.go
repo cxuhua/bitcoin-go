@@ -7,10 +7,25 @@ import (
 	"context"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"log"
+	"os"
 	"testing"
 )
+
+func TestSaveTXToDat(t *testing.T) {
+	data := util.HexDecode("01000000013129282e9929a648c4f098c18b059e7a2a35e3451b3d1b5e3708fc1ab3ef966e0000000049483045022058c4285e0237dd0d78260b85fabf3616aa2ecbda6dd8e3713608ff965b190487022100a3734e247992a295c8b227db00f3403bb6b7f4a478e93f6beba5803af271022601ffffffff020795927a00000000434104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5ac40c06503000000001976a91426c0e35b30b270138a3859bf666e69b2626c8c7588ac00000000")
+	h := NewNetHeader(data)
+	tx := &TX{}
+	tx.Read(h)
+	log.Println(tx.Hash, "save")
+	file := fmt.Sprintf("../dat/tx%s.dat", tx.Hash)
+	err := ioutil.WriteFile(file, data, os.ModePerm)
+	if err != nil {
+		t.Errorf("save error %v", err)
+	}
+}
 
 func TestInfo(t *testing.T) {
 	data2 := util.HexDecode("010000000001010a42f868c056a897360caaa74dc926da6dcc6faf3d39a09a7c23d2f06edf90df0b00000000ffffffff0500e1f505000000001976a91415942967630164eb8e58c23f744545377df8bb8f88ac40aeeb02000000001976a914906f236695e15da92ab210d3d243ba99eabef90188ac80841e00000000001976a914f4c27069786e4a3918500e56a117c0784925725588acb0c206000000000017a91469f373eac01ae2008ced4a8cc08ebff8ba0ba7a287905c450400000000220020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d0400483045022100abbbcf833532b331309a3c66b1670ece8b559ad9a9f791563df3956037534d4c02202d997f0fcd13fdbac3f91f656e76bfc446bf0944f2896c53bde3608eddda8e770147304402200d1b4137a3608b3a9ceaef2a9658bb7fb0576819bae3fbbbdb337c463b64244402204bae46107d5d7e1e4c4a61303b8cfa6e5c360f2f6ba6fe99e2f9c51d31e0e230016952210375e00eb72e29da82b89367947f29ef34afb75e8654f6ea368e0acdfd92976b7c2103a1b26313f430c4b15bb1fdce663207659d8cac749a0e53d70eff01874496feff2103c96d495bfdd5ba4145e3e046fee45e84a8a48ad05bd8dbb395c011a32cf9f88053ae00000000")
@@ -67,6 +82,21 @@ func TestP2SHSign(t *testing.T) {
 			return err
 		}
 		return tx2.Verify(db)
+	})
+	if err != nil {
+		t.Errorf("Verify test failed  %v", err)
+	}
+}
+
+func TestP2PKSign(t *testing.T) {
+	err := db.UseSession(context.Background(), func(db db.DbImp) error {
+		db.SetTXCacher(Fxs)
+		id := NewHexBHash("80d417567b5a032465474052cca4dc38c57f6d5dc10dc7519b2ca20ac7d5512b")
+		tx2, err := LoadTX(id, db)
+		if err != nil {
+			return err
+		}
+		return VerifyTX(tx2, db)
 	})
 	if err != nil {
 		t.Errorf("Verify test failed  %v", err)

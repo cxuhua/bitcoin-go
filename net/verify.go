@@ -70,6 +70,14 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 				ctx: tx,
 				typ: typ,
 			}
+		case TX_P2PK:
+			verifyer = &p2pkVerify{
+				idx: idx,
+				in:  in,
+				out: out,
+				ctx: tx,
+				typ: typ,
+			}
 		default:
 			return fmt.Errorf("in %d checktype not support,miss Verifyer", idx)
 		}
