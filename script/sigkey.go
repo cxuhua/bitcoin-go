@@ -263,7 +263,7 @@ func GetPublicAddress(tx int, pubs []*PublicKey, opt ...interface{}) (string, []
 		return addr, sv, nil
 	case TX_P2SH_WPKH_V0:
 		if len(pubs) != 1 {
-			return "", nil, errors.New("TX_P2PKH pub one")
+			return "", nil, errors.New("TX_P2SH_WPKH_V0 pub one")
 		}
 		bv := pubs[0].Marshal()
 		hv := util.HASH160(bv)
@@ -336,15 +336,13 @@ func (pk *PublicKey) From(data []byte) error {
 		}
 		p := curve.Params().P
 		x := new(big.Int).SetBytes(data[1 : 1+byteLen])
-		var y *big.Int
 		ybit := uint(0)
 		if data[0] == P256_PUBKEY_ODD {
 			ybit = 1
 		}
-		if v, err := util.DecompressY(x, ybit); err != nil {
+		y, err := util.DecompressY(x, ybit)
+		if err != nil {
 			return fmt.Errorf("decompress x -> y error %v", err)
-		} else {
-			y = v
 		}
 		d := byte(y.Bit(0))
 		if data[0] == P256_PUBKEY_ODD && d != 1 {

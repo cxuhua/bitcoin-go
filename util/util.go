@@ -75,13 +75,17 @@ func P2PKHAddress(pk []byte) string {
 
 //bc
 func BECH32Address(pk []byte) string {
+	ver := byte(0)
+	pl := byte(len(pk))
 	var a []byte = nil
 	if len(pk) == 20 {
+		a = pk
+	} else if len(pk) == 32 {
 		a = pk
 	} else {
 		a = HASH160(pk)
 	}
-	b := []byte{0, 0x14}
+	b := []byte{ver, pl}
 	b = append(b, a...)
 	addr, err := SegWitAddressEncode("bc", b)
 	if err != nil {

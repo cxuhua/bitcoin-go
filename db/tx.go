@@ -32,10 +32,11 @@ func (m *mongoDBImp) MulTX(vs []interface{}, id ...[]byte) error {
 		if err != nil {
 			return err
 		}
-		i := 0
-		for i < len(vs) && cur.Next(m) {
-			cur.Decode(vs[i])
-			i++
+		for i := 0; i < len(vs) && cur.Next(m); i++ {
+			err = cur.Decode(vs[i])
+			if err != nil {
+				return err
+			}
 		}
 		return nil
 	} else {
@@ -56,9 +57,18 @@ func (m *mongoDBImp) MulTX(vs []interface{}, id ...[]byte) error {
 //save tans data
 func (m *mongoDBImp) SetTX(id []byte, v interface{}) error {
 	switch v.(type) {
-	case KeyValue:
+	case IncValue:
 		ds := bson.M{}
-		for k, v := range v.(KeyValue) {
+		for k, v := range v.(IncValue) {
+			ds[k] = v
+		}
+		if len(ds) > 0 {
+			_, err := m.blocks().UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
+			return err
+		}
+	case SetValue:
+		ds := bson.M{}
+		for k, v := range v.(SetValue) {
 			ds[k] = v
 		}
 		if len(ds) > 0 {

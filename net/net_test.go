@@ -13,11 +13,19 @@ import (
 )
 
 func TestInfo(t *testing.T) {
-	data2 := util.HexDecode("01000000010000000000000000000000000000000000000000000000000000000000000000ffffffff0704e5b3431c015affffffff0100f2052a010000004341044fd96461a502c33d9fbc259a3c59a73af0982a20946c88baa108e63a5134cff122a5e192d560570ea9c6d6cf94df76a9dc9483cdb17f1678e5fc45e58d181a66ac00000000")
+	data2 := util.HexDecode("010000000001010a42f868c056a897360caaa74dc926da6dcc6faf3d39a09a7c23d2f06edf90df0b00000000ffffffff0500e1f505000000001976a91415942967630164eb8e58c23f744545377df8bb8f88ac40aeeb02000000001976a914906f236695e15da92ab210d3d243ba99eabef90188ac80841e00000000001976a914f4c27069786e4a3918500e56a117c0784925725588acb0c206000000000017a91469f373eac01ae2008ced4a8cc08ebff8ba0ba7a287905c450400000000220020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d0400483045022100abbbcf833532b331309a3c66b1670ece8b559ad9a9f791563df3956037534d4c02202d997f0fcd13fdbac3f91f656e76bfc446bf0944f2896c53bde3608eddda8e770147304402200d1b4137a3608b3a9ceaef2a9658bb7fb0576819bae3fbbbdb337c463b64244402204bae46107d5d7e1e4c4a61303b8cfa6e5c360f2f6ba6fe99e2f9c51d31e0e230016952210375e00eb72e29da82b89367947f29ef34afb75e8654f6ea368e0acdfd92976b7c2103a1b26313f430c4b15bb1fdce663207659d8cac749a0e53d70eff01874496feff2103c96d495bfdd5ba4145e3e046fee45e84a8a48ad05bd8dbb395c011a32cf9f88053ae00000000")
 	h2 := NewNetHeader(data2)
 	tx2 := &TX{}
 	tx2.Read(h2)
-	log.Println(tx2)
+	log.Println(hex.EncodeToString(*tx2.Ins[0].Witness.Script[0]))
+
+	xx := tx2.Ins[0].Witness.Script[3].Bytes()
+	log.Println(hex.EncodeToString(xx))
+	xv := util.HASH160(xx)
+	//log.Println(util.BECH32Address(util.HexDecode("701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d")), util.BECH32Address(xx))
+	log.Println(hex.EncodeToString(xv))
+	//log.Println(tx2)
+	//log.Println(tx2.Verify(nil))
 }
 
 func TestCloneTX(t *testing.T) {
@@ -34,10 +42,11 @@ func TestCloneTX(t *testing.T) {
 }
 
 func TestSaveTX(t *testing.T) {
-	data2 := util.HexDecode("0100000001b6da357dfa24917f1f32414a10e2fcdad971a52521ecf84901f63612b0a103090000000048473044021f01ea6d57bf0373f8242ff263893ed396ea3de374439dfd80d59c2c1e6ab50a022100ee013faa0138a5f014b8f308befe2995ae3cb2e9fcd0763d2c7ca7b91f74435901ffffffff0247e8846d00000000434104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5acc0ac0d0d000000001976a9146ced4fd6ab06f237d185aebb11a7b4d92d7f8c8088ac00000000")
+	data2 := util.HexDecode("010000000001012abed540bf3633b2f5ba0ab000aa4fa03f306a385f6d398ff4e2102259aa084e0200000000ffffffff0200a3e1110000000017a91443b6b5404bdd3c514d6a3a500a567d365412148587f4a03d0a00000000220020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d040047304402205224ce0fa75ec852ace15143c83206a5fc8a4e56050fea6a01712fc6e6483ed6022065aefe1c48541ca6bf8db47e73781ff968a0467d50854a31d00db53caef4b90101483045022100881d348faae0d0613853676d2a7842d1a44018625ced82de54c88030a1e3810d0220096dcbc30a58bfb645cb2337309e0cedf0da030c3600767ce41e7c8df9675adf016952210375e00eb72e29da82b89367947f29ef34afb75e8654f6ea368e0acdfd92976b7c2103a1b26313f430c4b15bb1fdce663207659d8cac749a0e53d70eff01874496feff2103c96d495bfdd5ba4145e3e046fee45e84a8a48ad05bd8dbb395c011a32cf9f88053ae00000000")
 	h := NewNetHeader(data2)
 	tx := &TX{}
 	tx.Read(h)
+	log.Println(tx.Hash, "save")
 	err := db.UseSession(context.Background(), func(db db.DbImp) error {
 		err := tx.Save(db)
 		if err != nil {
@@ -50,7 +59,21 @@ func TestSaveTX(t *testing.T) {
 	}
 }
 
-func TestSign(t *testing.T) {
+func TestP2SHSign(t *testing.T) {
+	err := db.UseSession(context.Background(), func(db db.DbImp) error {
+		id := NewHexBHash("0ae88f93be14b77994da8ebb948e817e6fbb98d66c0091366e46df0663ea3813")
+		tx2, err := LoadTX(id, db)
+		if err != nil {
+			return err
+		}
+		return tx2.Verify(db)
+	})
+	if err != nil {
+		t.Errorf("Verify test failed  %v", err)
+	}
+}
+
+func TestP2PKHSign(t *testing.T) {
 	err := db.UseSession(context.Background(), func(db db.DbImp) error {
 		id := NewHexBHash("78470577b25f58e0b18fd21e57eb64c10eb66272a856208440362103de0f31da")
 		tx2, err := LoadTX(id, db)
@@ -76,7 +99,7 @@ func TestCoinBaseTX(t *testing.T) {
 		t.Errorf("coinbase tx check error")
 	}
 	if tx.Hash.String() != "c09b7a4be56da07d0e27fdaa465d9fc60f420e9216dbac70b714125729ca63fb" {
-		t.Errorf("coinbase tx hashid error")
+		t.Errorf("coinbase tx hashid error %v", tx.Hash)
 	}
 	oh := NewNetHeader()
 	tx.Write(oh)
@@ -212,7 +235,7 @@ func TestBlockFromDB(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if !m.Merkle.Equal(m.NewMarkle()) {
+		if !m.Merkle.Equal(m.MarkleId()) {
 			return errors.New("equal markle error")
 		}
 		return nil
@@ -235,7 +258,7 @@ func TestBlockData(t *testing.T) {
 	if !m.Hash.Equal(blockId) {
 		t.Errorf("block hashid error")
 	}
-	if !m.Merkle.Equal(m.NewMarkle()) {
+	if !m.Merkle.Equal(m.MarkleId()) {
 		t.Errorf("equal markle error")
 	}
 	//err = db.UseSession(context.Background(), func(db db.DbImp) error {

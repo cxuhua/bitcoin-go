@@ -132,7 +132,32 @@ func (m *MsgBuffer) ReadVarInt() (uint64, int) {
 	}
 }
 
-func (m *MsgBuffer) WriteVarInt(v uint64) int {
+func (m *MsgBuffer) WriteVarInt(iv interface{}) int {
+	v := uint64(0)
+	switch iv.(type) {
+	case int:
+		v = uint64(iv.(int))
+	case int8:
+		v = uint64(iv.(int8))
+	case int16:
+		v = uint64(iv.(int16))
+	case int32:
+		v = uint64(iv.(int32))
+	case int64:
+		v = uint64(iv.(int64))
+	case uint:
+		v = uint64(iv.(uint))
+	case uint8:
+		v = uint64(iv.(uint8))
+	case uint16:
+		v = uint64(iv.(uint16))
+	case uint32:
+		v = uint64(iv.(uint32))
+	case uint64:
+		v = iv.(uint64)
+	default:
+		panic(errors.New("iv type error"))
+	}
 	if v < 0xFD {
 		m.WriteUint8(uint8(v & 0xFF))
 		return 1
@@ -162,7 +187,7 @@ func (m *MsgBuffer) WriteScript(s *script.Script) {
 	if s == nil {
 		m.WriteVarInt(0)
 	} else {
-		m.WriteVarInt(uint64((s.Len())))
+		m.WriteVarInt(s.Len())
 		m.WriteBytes(s.Bytes())
 	}
 }
@@ -263,7 +288,7 @@ func (m *MsgBuffer) ReadString() string {
 
 func (m *MsgBuffer) WriteString(v string) {
 	l := len(v)
-	m.WriteVarInt(uint64(l))
+	m.WriteVarInt(l)
 	if l > 0 {
 		m.WriteBytes([]byte(v))
 	}

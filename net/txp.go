@@ -145,25 +145,41 @@ func (m *TxIn) Eval(stack *script.Stack, lock *script.Script, checker script.Sig
 	if lock == nil || m.Script == nil {
 		return errors.New("script miss")
 	}
-	if lock.IsP2PKH() || lock.IsPUBKEY() {
-		ok, err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
+	if lock.IsP2PKH() || lock.IsP2PK() {
+		err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
 		if err != nil {
 			return err
 		}
-		if !ok {
-			return errors.New("eval unlock script failed")
-		}
-		ok, err = lock.Eval(stack, checker, script.SCRIPT_VERIFY_NULLFAIL, script.SIG_VER_BASE)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("eval lock script failed")
-		}
-		return nil
+		return lock.Eval(stack, checker, script.SCRIPT_VERIFY_NULLFAIL, script.SIG_VER_BASE)
 	}
 	if lock.IsP2SH() {
-
+		//check hash160 value
+		err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
+		if err != nil {
+			return err
+		}
+		err = lock.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
+		if err != nil {
+			return err
+		}
+		if stack.Len() < 1 {
+			return errors.New("check hash160 top value miss")
+		}
+		if !stack.Top(-1).ToBool() {
+			return errors.New("check hash160 value not equal")
+		}
+		if m.Witness == nil {
+			return errors.New("P2SH Witness script miss")
+		}
+		if len(m.Witness.Script) < 2 {
+			return errors.New("P2SH Witness script num < 2")
+		}
+		if m.Script.IsP2WPKH() {
+			sigdata := m.Witness.Script[0].Bytes()
+			pubdata := m.Witness.Script[1].Bytes()
+			err = checker.CheckSig(sigdata, pubdata, script.SIG_VER_WITNESS_V0)
+		}
+		return err
 	}
 	return errors.New("lock not support")
 }
@@ -176,6 +192,8 @@ func (m *TxIn) Clone() *TxIn {
 	v.Sequence = m.Sequence
 	if m.Witness != nil {
 		v.Witness = m.Witness.Clone()
+	} else {
+		v.Witness = nil
 	}
 	return v
 }
@@ -213,81 +231,14 @@ func (m *TxWitnesses) Read(h *NetHeader) {
 	wl, _ := h.ReadVarInt()
 	m.Script = make([]*script.Script, wl)
 	for i, _ := range m.Script {
-		v := h.ReadScript()
-		m.Script[i] = v
+		m.Script[i] = h.ReadScript()
 	}
 }
 
 func (m *TxWitnesses) Write(h *NetHeader) {
-	h.WriteVarInt(uint64(len(m.Script)))
+	h.WriteVarInt(len(m.Script))
 	for _, v := range m.Script {
 		h.WriteScript(v)
-	}
-}
-
-const (
-	INVALID_REASON_NONE = iota
-	INVALID_REASON_CONSENSUS
-	INVALID_REASON_RECENT_CONSENSUS_CHANGE
-	INVALID_REASON_CACHED_INVALID
-	INVALID_REASON_BLOCK_INVALID_HEADER
-	INVALID_REASON_BLOCK_MUTATED
-	INVALID_REASON_BLOCK_MISSING_PREV
-	INVALID_REASON_BLOCK_INVALID_PREV
-	INVALID_REASON_BLOCK_TIME_FUTURE
-	INVALID_REASON_BLOCK_CHECKPOINT
-	INVALID_REASON_TX_NOT_STANDARD
-	INVALID_REASON_TX_MISSING_INPUTS
-	INVALID_REASON_TX_PREMATURE_SPEND
-	INVALID_REASON_TX_WITNESS_MUTATED
-	INVALID_REASON_TX_CONFLICT
-	INVALID_REASON_TX_MEMPOOL_POLICY
-)
-
-func IsTransactionReason(r int) bool {
-	return r == INVALID_REASON_NONE ||
-		r == INVALID_REASON_CONSENSUS ||
-		r == INVALID_REASON_RECENT_CONSENSUS_CHANGE ||
-		r == INVALID_REASON_TX_NOT_STANDARD ||
-		r == INVALID_REASON_TX_PREMATURE_SPEND ||
-		r == INVALID_REASON_TX_MISSING_INPUTS ||
-		r == INVALID_REASON_TX_WITNESS_MUTATED ||
-		r == INVALID_REASON_TX_CONFLICT ||
-		r == INVALID_REASON_TX_MEMPOOL_POLICY
-}
-
-func IsBlockReason(r int) bool {
-	return r == INVALID_REASON_NONE ||
-		r == INVALID_REASON_CONSENSUS ||
-		r == INVALID_REASON_RECENT_CONSENSUS_CHANGE ||
-		r == INVALID_REASON_CACHED_INVALID ||
-		r == INVALID_REASON_BLOCK_INVALID_HEADER ||
-		r == INVALID_REASON_BLOCK_MUTATED ||
-		r == INVALID_REASON_BLOCK_MISSING_PREV ||
-		r == INVALID_REASON_BLOCK_INVALID_PREV ||
-		r == INVALID_REASON_BLOCK_TIME_FUTURE ||
-		r == INVALID_REASON_BLOCK_CHECKPOINT
-}
-
-type ValidationError struct {
-	reason int
-	reject byte
-	err    string
-}
-
-func (v *ValidationError) Reject() byte {
-	return v.reject
-}
-
-func (v *ValidationError) Error() string {
-	return fmt.Sprintf("reason=%d reject=%d err=%s", v.reason, v.reject, v.err)
-}
-
-func NewValidationError(reason int, reject byte, err string) *ValidationError {
-	return &ValidationError{
-		reason: reason,
-		reject: reject,
-		err:    err,
 	}
 }
 
@@ -319,9 +270,13 @@ type TX struct {
 	LockTime uint32
 	wbpos    int    //witness wpos begin
 	wepos    int    //witness wpos end
+	Witness  []byte //Witnesses data
 	bbpos    int    //body begin pos
 	bepos    int    //body end pos
-	Body     []byte //body data
+	Body     []byte //body data PS: not include witness data and flag
+	rbpos    int    //raw data begin
+	repos    int    //raw data end
+	Raw      []byte //raw data
 }
 
 func NewTX(bid HashID, idx uint32) *TX {
@@ -372,7 +327,7 @@ func NewTXFrom(tx *TX) *TXHeader {
 	txh := &TXHeader{}
 	txh.Id = tx.Hash[:]
 	txh.Ver = tx.Ver
-	txh.Raw = tx.Body
+	txh.Raw = tx.Raw
 	txh.Block = tx.Block[:]
 	txh.Index = tx.Index
 	return txh
@@ -398,6 +353,10 @@ func (m *TX) Verify(db db.DbImp) error {
 	if err := m.Check(); err != nil {
 		return fmt.Errorf("check tx error %v", err)
 	}
+	if m.IsCoinBase() {
+		stack := script.NewStack()
+		return m.Ins[0].Script.Eval(stack, nil, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
+	}
 	//verify txin
 	for i, v := range m.Ins {
 		ptx, err := m.GetPrevTx(i, db)
@@ -412,13 +371,56 @@ func (m *TX) Verify(db db.DbImp) error {
 		if locks == nil || locks.Len() == 0 {
 			return errors.New("lock script error")
 		}
-		checker := NewTxSigChecker(m, i)
+		checker := NewTxSigChecker(m, ptx, i)
 		stack := script.NewStack()
 		if err := v.Eval(stack, locks, checker); err != nil {
 			return fmt.Errorf("tx in %d eval error %v", i, err)
 		}
 	}
 	return nil
+}
+
+func (m *TX) GetOutputsHash(idx int, ht byte) []byte {
+	lht := ht & 0x1f
+	if lht != script.SIGHASH_SINGLE && lht != script.SIGHASH_NONE {
+		h := NewNetHeader()
+		for _, v := range m.Outs {
+			v.Write(h)
+		}
+		return util.HASH256(h.Payload)
+	} else if lht == script.SIGHASH_SINGLE && idx < len(m.Outs) {
+		h := NewNetHeader()
+		m.Outs[idx].Write(h)
+		return util.HASH256(h.Payload)
+	} else {
+		hash := HashID{}
+		return hash[:]
+	}
+}
+
+func (m *TX) GetPrevoutHash(idx int, ht byte) []byte {
+	if ht&script.SIGHASH_ANYONECANPAY != 0 {
+		hash := HashID{}
+		return hash[:]
+	}
+	h := NewNetHeader()
+	for _, v := range m.Ins {
+		h.WriteBytes(v.OutHash[:])
+		h.WriteUInt32(v.OutIndex)
+	}
+	return util.HASH256(h.Payload)
+}
+
+func (m *TX) GetSequenceHash(idx int, ht byte) []byte {
+	if ht&script.SIGHASH_ANYONECANPAY != 0 || (ht&0x1f) == script.SIGHASH_SINGLE || (ht&0x1f) == script.SIGHASH_NONE {
+		hash := HashID{}
+		return hash[:]
+	}
+	h := NewNetHeader()
+	for _, v := range m.Ins {
+		h.WriteUInt32(v.Sequence)
+	}
+	return util.HASH256(h.Payload)
 }
 
 func (m *TX) Clone() *TX {
@@ -441,37 +443,41 @@ func (m *TX) Clone() *TX {
 	}
 	v.LockTime = m.LockTime
 	v.Body = m.Body
+	v.Witness = m.Witness
 	return v
 }
 
 func (m *TX) Check() error {
 	if len(m.Ins) == 0 {
-		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vin-empty")
+		return errors.New("bad-txns-vin-empty")
 	}
 	if len(m.Outs) == 0 {
-		return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-outs-empty")
+		return errors.New("bad-txns-outs-empty")
 	}
 	vout := Amount(0)
 	for _, v := range m.Outs {
 		if int64(v.Value) < 0 {
-			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vout-negative")
+			return errors.New("bad-txns-vout-negative")
 		}
-		if Amount(v.Value) > MAX_MONEY {
-			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-vout-toolarge")
+		if !Amount(v.Value).IsRange() {
+			return errors.New("bad-txns-vout-toolarge")
 		}
 		vout += Amount(v.Value)
 		if !vout.IsRange() {
-			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-txouttotal-toolarge")
+			return errors.New("bad-txns-txouttotal-toolarge")
 		}
 	}
 	if m.IsCoinBase() {
 		if m.Ins[0].Script.Len() < 2 || m.Ins[0].Script.Len() > 100 {
-			return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-cb-length")
+			return errors.New("bad-cb-length")
+		}
+		if len(m.Ins) != 1 {
+			return errors.New("bad-cb-ins-count")
 		}
 	} else {
 		for _, v := range m.Ins {
 			if v.OutHash.IsZero() {
-				return NewValidationError(INVALID_REASON_CONSENSUS, REJECT_INVALID, "bad-txns-prevout-null")
+				return errors.New("bad-txns-prevout-null")
 			}
 		}
 	}
@@ -519,16 +525,24 @@ func (m *TX) ReadWitnesses(h *NetHeader) {
 		m.Ins[i].Witness = v
 	}
 	m.wepos = h.Pos()
+	m.Witness = h.SubBytes(m.wbpos, m.wepos)
 }
 
 func (m *TX) Read(h *NetHeader) {
+	m.rbpos = h.Pos()
+	buf := bytes.Buffer{}
+	//+ver
 	m.bbpos = h.Pos()
 	m.Ver = int32(h.ReadUInt32())
+	m.bepos = h.Pos()
+	buf.Write(h.SubBytes(m.bbpos, m.bepos))
 	//check flag for witnesses
 	m.Flag = h.Peek(2)
 	if m.HasWitness() {
 		h.Skip(2)
 	}
+	//+ins outs
+	m.bbpos = h.Pos()
 	il, _ := h.ReadVarInt()
 	m.Ins = make([]*TxIn, il)
 	for i, _ := range m.Ins {
@@ -543,55 +557,109 @@ func (m *TX) Read(h *NetHeader) {
 		v.Read(h)
 		m.Outs[i] = v
 	}
+	m.bepos = h.Pos()
+	buf.Write(h.SubBytes(m.bbpos, m.bepos))
 	//if has witnesses
 	if m.HasWitness() {
 		m.ReadWitnesses(h)
 	}
+	//lock time
+	m.bbpos = h.Pos()
 	m.LockTime = h.ReadUInt32()
+	m.repos = h.Pos()
 	m.bepos = h.Pos()
-	m.Body = h.SubBytes(m.bbpos, m.bepos)
-	copy(m.Hash[:], util.HASH256(m.Body))
+	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+	//hash get tx id
+	m.Body = buf.Bytes()
+	HASH256To(m.Body, &m.Hash)
+	m.Raw = h.SubBytes(m.rbpos, m.repos)
 }
 
 func (m *TX) HasWitness() bool {
 	return len(m.Flag) == 2 && m.Flag[0] == 0 && m.Flag[1] == 1
 }
 
-func (m *TX) WitnessesLen() int {
-	return m.wepos - m.wbpos
-}
-
 func (m *TX) WriteWitnesses(h *NetHeader) {
 	m.wbpos = h.Pos()
 	for _, v := range m.Ins {
-		if v.Witness == nil {
-			continue
-		}
 		v.Witness.Write(h)
 	}
 	m.wepos = h.Pos()
+	m.Witness = h.SubBytes(m.wbpos, m.wepos)
 }
 
-func (m *TX) Write(h *NetHeader) {
-	s := h.Pos()
+func (m *TX) SetHasWitness(v bool) {
+	if v {
+		m.Flag = []byte{0, 1}
+	} else {
+		m.Flag = []byte{}
+	}
+}
+
+/*
+	anyone := ht&script.SIGHASH_ANYONECANPAY != 0
+	single := (ht & 0x1f) == script.SIGHASH_SINGLE
+	none := (ht & 0x1f) == script.SIGHASH_NONE
+*/
+
+func (m *TxIn) WriteSig(h *NetHeader, ht byte, ver script.SigVersion) {
+
+	h.WriteBytes(m.OutHash[:])
+	h.WriteUInt32(m.OutIndex)
+	h.WriteScript(m.Script)
+	h.WriteUInt32(m.Sequence)
+}
+
+func (m *TX) WriteSig(h *NetHeader, ht byte, ver script.SigVersion) {
 	h.WriteUInt32(uint32(m.Ver))
-	if m.HasWitness() {
-		h.WriteBytes(m.Flag)
+	ic := len(m.Ins)
+	if ht&script.SIGHASH_ANYONECANPAY != 0 {
+		ic = 1
 	}
-	h.WriteVarInt(uint64(len(m.Ins)))
-	for _, v := range m.Ins {
-		v.Write(h)
+	h.WriteVarInt(ic)
+	for i := 0; i < ic; i++ {
+		m.Ins[i].WriteSig(h, ht, ver)
 	}
-	h.WriteVarInt(uint64(len(m.Outs)))
+	h.WriteVarInt(len(m.Outs))
 	for _, v := range m.Outs {
 		v.Write(h)
 	}
+	h.WriteUInt32(m.LockTime)
+}
+
+func (m *TX) Write(h *NetHeader) {
+	buf := bytes.Buffer{}
+	m.bbpos = h.Pos()
+	h.WriteUInt32(uint32(m.Ver))
+	m.bepos = h.Pos()
+	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+
+	if m.HasWitness() {
+		h.WriteBytes(m.Flag)
+	}
+
+	m.bbpos = h.Pos()
+	h.WriteVarInt(len(m.Ins))
+	for _, v := range m.Ins {
+		v.Write(h)
+	}
+	h.WriteVarInt(len(m.Outs))
+	for _, v := range m.Outs {
+		v.Write(h)
+	}
+	m.bepos = h.Pos()
+	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+
 	if m.HasWitness() {
 		m.WriteWitnesses(h)
 	}
+	m.bbpos = h.Pos()
 	h.WriteUInt32(m.LockTime)
-	e := h.Pos()
-	copy(m.Hash[:], util.HASH256(h.SubBytes(s, e)))
+	m.bepos = h.Pos()
+	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+
+	m.Body = buf.Bytes()
+	HASH256To(m.Body, &m.Hash)
 }
 
 //
@@ -614,7 +682,7 @@ func (m *MsgHeaders) Read(h *NetHeader) {
 }
 
 func (m *MsgHeaders) Write(h *NetHeader) {
-	h.WriteVarInt(uint64(len(m.Headers)))
+	h.WriteVarInt(len(m.Headers))
 	for _, v := range m.Headers {
 		v.Write(h)
 	}
@@ -650,7 +718,7 @@ func (m *MsgGetBlocks) Read(h *NetHeader) {
 
 func (m *MsgGetBlocks) Write(h *NetHeader) {
 	h.WriteUInt32(m.Ver)
-	h.WriteVarInt(uint64(len(m.Blocks)))
+	h.WriteVarInt(len(m.Blocks))
 	for _, v := range m.Blocks {
 		h.WriteBytes(v[:])
 	}
@@ -685,7 +753,7 @@ func (m *MsgNotFound) Read(h *NetHeader) {
 }
 
 func (m *MsgNotFound) Write(h *NetHeader) {
-	h.WriteVarInt(uint64(len(m.Invs)))
+	h.WriteVarInt(len(m.Invs))
 	for _, v := range m.Invs {
 		v.Write(h)
 	}
@@ -792,13 +860,14 @@ func (m *MsgBlock) Command() string {
 }
 
 func (m *MsgBlock) Read(h *NetHeader) {
+	hs := h.Pos()
 	m.Ver = h.ReadUInt32()
 	h.ReadBytes(m.Prev[:])
 	h.ReadBytes(m.Merkle[:])
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
-	copy(m.Hash[:], util.HASH256(h.Payload[:h.Pos()]))
+	HASH256To(h.Payload[hs:h.Pos()], &m.Hash)
 	m.bbpos = h.Pos()
 	l, _ := h.ReadVarInt()
 	m.Txs = make([]*TX, l)
@@ -813,36 +882,22 @@ func (m *MsgBlock) Read(h *NetHeader) {
 }
 
 func (m *MsgBlock) Write(h *NetHeader) {
+	hp := h.Pos()
 	h.WriteUInt32(m.Ver)
 	h.WriteBytes(m.Prev[:])
 	h.WriteBytes(m.Merkle[:])
 	h.WriteUInt32(m.Timestamp)
 	h.WriteUInt32(m.Bits)
 	h.WriteUInt32(m.Nonce)
-	h.WriteVarInt(uint64(len(m.Txs)))
+	h.WriteVarInt(len(m.Txs))
+	HASH256To(h.Payload[hp:h.Pos()], &m.Hash)
 	m.bbpos = h.Pos()
 	for _, v := range m.Txs {
 		v.Write(h)
 	}
 	m.bepos = h.Pos()
-}
-
-//compute one floor
-func (m *MsgBlock) computeMarkle(hashs [][]byte) []byte {
-	l := len(hashs)
-	if l == 1 {
-		return hashs[0]
-	}
-	if l%2 != 0 {
-		hashs = append(hashs, hashs[l-1])
-		l++
-	}
-	ret := [][]byte{}
-	for i := 0; i < l/2; i++ {
-		b := append(hashs[i*2], hashs[i*2+1]...)
-		ret = append(ret, util.HASH256(b))
-	}
-	return m.computeMarkle(ret)
+	m.Body = h.SubBytes(m.bbpos, m.bepos)
+	m.Count = len(m.Txs)
 }
 
 func (m *MsgBlock) MarkleNodes() script.MerkleNodeArray {
@@ -853,7 +908,7 @@ func (m *MsgBlock) MarkleNodes() script.MerkleNodeArray {
 	return nodes
 }
 
-func (m *MsgBlock) NewMarkle() HashID {
+func (m *MsgBlock) MarkleId() HashID {
 	ret := HashID{}
 	nodes := m.MarkleNodes()
 	tree := script.NewMerkleTree(nodes)
@@ -888,7 +943,7 @@ func (m *MsgGetData) Add(inv *Inventory) {
 }
 
 func (m *MsgGetData) Write(h *NetHeader) {
-	h.WriteVarInt(uint64(len(m.Invs)))
+	h.WriteVarInt(len(m.Invs))
 	for _, v := range m.Invs {
 		v.Write(h)
 	}
@@ -940,7 +995,7 @@ func (m *MsgINV) Read(h *NetHeader) {
 }
 
 func (m *MsgINV) Write(h *NetHeader) {
-	h.WriteVarInt(uint64(len(m.Invs)))
+	h.WriteVarInt(len(m.Invs))
 	for _, v := range m.Invs {
 		v.Write(h)
 	}
@@ -976,7 +1031,7 @@ func (m *MsgGetHeaders) Read(h *NetHeader) {
 
 func (m *MsgGetHeaders) Write(h *NetHeader) {
 	h.WriteUInt32(m.Ver)
-	h.WriteVarInt(uint64(len(m.Blocks)))
+	h.WriteVarInt(len(m.Blocks))
 	for _, v := range m.Blocks {
 		h.WriteBytes(v[:])
 	}

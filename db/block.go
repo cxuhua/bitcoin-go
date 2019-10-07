@@ -27,9 +27,18 @@ func (m *mongoDBImp) GetBK(id []byte, v interface{}) error {
 //save tans data
 func (m *mongoDBImp) SetBK(id []byte, v interface{}) error {
 	switch v.(type) {
-	case KeyValue:
+	case IncValue:
 		ds := bson.M{}
-		for k, v := range v.(KeyValue) {
+		for k, v := range v.(IncValue) {
+			ds[k] = v
+		}
+		if len(ds) > 0 {
+			_, err := m.blocks().UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
+			return err
+		}
+	case SetValue:
+		ds := bson.M{}
+		for k, v := range v.(SetValue) {
 			ds[k] = v
 		}
 		if len(ds) > 0 {

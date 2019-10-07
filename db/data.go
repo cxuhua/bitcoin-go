@@ -10,7 +10,8 @@ const (
 	DATABASE = "bitcoin"
 )
 
-type KeyValue map[string]interface{}
+type SetValue map[string]interface{}
+type IncValue map[string]int
 
 type DbImp interface {
 	context.Context

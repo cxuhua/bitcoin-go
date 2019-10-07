@@ -11,7 +11,7 @@ const (
 type SigVersion uint
 
 type SigChecker interface {
-	CheckSig(sigdata []byte, pubdata []byte, script *Script, sigver SigVersion) error
+	CheckSig(sigdata []byte, pubdata []byte, sigver SigVersion) error
 	CheckLockTime(ltime ScriptNum) error
 	CheckSequence(seq ScriptNum) error
 }

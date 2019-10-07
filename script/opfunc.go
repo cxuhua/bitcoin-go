@@ -235,14 +235,71 @@ func (s Script) HasValidOps() bool {
 	return true
 }
 
-func NewPUBKEYScript(pub *PublicKey) *Script {
+/*
+// payToPubKeyHashScript creates a new script to pay a transaction
+// output to a 20-byte pubkey hash. It is expected that the input is a valid
+// hash
+//P2PKH
+func payToPubKeyHashScript(pubKeyHash []byte) ([]byte, error) {
+   return NewScriptBuilder().AddOp(OP_DUP).AddOp(OP_HASH160).
+      AddData(pubKeyHash).AddOp(OP_EQUALVERIFY).AddOp(OP_CHECKSIG).
+      Script()
+}
+
+//P2WPKH
+// payToWitnessPubKeyHashScript creates a new script to pay to a version 0
+// pubkey hash witness program. The passed hash is expected to be valid.
+func payToWitnessPubKeyHashScript(pubKeyHash []byte) ([]byte, error) {
+   return NewScriptBuilder().AddOp(OP_0).AddData(pubKeyHash).Script()
+}
+
+//P2SH
+// payToScriptHashScript creates a new script to pay a transaction output to a
+// script hash. It is expected that the input is a valid hash.
+func payToScriptHashScript(scriptHash []byte) ([]byte, error) {
+   return NewScriptBuilder().AddOp(OP_HASH160).AddData(scriptHash).
+      AddOp(OP_EQUAL).Script()
+}
+
+//P2WSH
+func payToWitnessScriptHashScript(scriptHash []byte) ([]byte, error) {
+   return NewScriptBuilder().AddOp(OP_0).AddData(scriptHash).Script()
+}
+
+//P2PK
+// payToPubkeyScript creates a new script to pay a transaction output to a
+// public key. It is expected that the input is a valid pubkey.
+func payToPubKeyScript(serializedPubKey []byte) ([]byte, error) {
+   return NewScriptBuilder().AddData(serializedPubKey).
+      AddOp(OP_CHECKSIG).Script()
+}
+
+*/
+
+func NewP2PKScript(pub *PublicKey) *Script {
 	b := pub.Marshal()
 	s := &Script{}
 	return s.PushBytes(b).PushOp(OP_CHECKSIG)
 }
 
-func (s Script) IsPUBKEY() bool {
+//2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac
+func (s Script) IsP2PK() bool {
 	return (s.Len() == 35 && s[0] == 33 && s[34] == OP_CHECKSIG) || (s.Len() == 67 && s[0] == 65 && s[66] == OP_CHECKSIG)
+}
+
+//00141d0f172a0ecb48aee1be1f2687d2963ae33f71a1
+func (s Script) IsP2WPKH() bool {
+	return s.Len() == 23 && s[0] == 22 && s[1] == 0 && s[2] == byte(s.Len()-3)
+}
+
+//IsP2WPKH
+//public key hash to p2pkh script
+func (s Script) GetP2PKHScript() *Script {
+	if !s.IsP2WPKH() {
+		panic(errors.New("s not IsP2WPKH"))
+	}
+	ns := &Script{}
+	return ns.PushOp(OP_DUP).PushOp(OP_HASH160).PushBytes(s[3:]).PushOp(OP_EQUALVERIFY).PushOp(OP_CHECKSIG)
 }
 
 func NewP2PKHScript(pub *PublicKey) *Script {
@@ -252,6 +309,7 @@ func NewP2PKHScript(pub *PublicKey) *Script {
 	return s.PushOp(OP_DUP).PushOp(OP_HASH160).PushBytes(hv).PushOp(OP_EQUALVERIFY).PushOp(OP_CHECKSIG)
 }
 
+//
 func (s Script) IsP2PKH() bool {
 	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
 }
@@ -263,6 +321,7 @@ func NewP2SHScript(pub *PublicKey) *Script {
 	return s.PushOp(OP_HASH160).PushBytes(hv).PushOp(OP_EQUAL)
 }
 
+//a9144733f37cf4db86fbc2efed2500b4f4e49f31202387
 func (s Script) IsP2SH() bool {
 	return s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
 }

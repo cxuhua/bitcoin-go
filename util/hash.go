@@ -35,6 +35,10 @@ func HASH160(b []byte) []byte {
 }
 
 func HASH256(b []byte) []byte {
-	v1 := SHA256(b)
-	return SHA256(v1)
+	s2 := sha256.New()
+	s2.Write(b)
+	v1 := s2.Sum(nil)
+	s2.Reset()
+	s2.Write(v1)
+	return s2.Sum(nil)
 }

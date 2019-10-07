@@ -8,6 +8,29 @@ import (
 	"testing"
 )
 
+func TestExp(t *testing.T) {
+	pri, _ := NewPrivateKey()
+	b := util.HexDecode("eb696a065ef48a2192da5b28b694f87544b30fae8327c4510137a922f32c6dcf")
+	pri.SetBytes(b, true)
+	pub := pri.PublicKey()
+	log.Println(hex.EncodeToString(pub.Marshal()))
+	hv := util.HexDecode("64f3b0f4dd2bb3aa1ce8566d220cc74dda9df97d8490cc81d89d735c92e59fb6")
+	//sig, err := pri.Sign(hv)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//sig.HashType = SIGHASH_ALL
+
+	sig, err := NewSigValue(util.HexDecode("3044022047ac8e878352d3ebbde1c94ce3a10d057c24175747116f8288e5d794d12d482f0220217f36a485cae903c713331d877c1f64677e3622ad4010726870540656fe9dcb01"))
+	if err != nil {
+		panic(err)
+	}
+	//3044022047ac8e878352d3ebbde1c94ce3a10d057c24175747116f8288e5d794d12d482f0220217f36a485cae903c713331d877c1f64677e3622ad4010726870540656fe9dcb01
+	//30460221009a5992c9856cf7007b65fd08903091494529b4cf60fb8e9487ec01f130459c13022100c1747349be4f1af57180e8769f8cd3380513cf657e2d1dbbbc371b927d85efe601
+	log.Println(pub.Verify(hv, sig))
+	log.Println(hex.EncodeToString(sig.Encode()), len(sig.Encode()))
+}
+
 func TestNewScript(t *testing.T) {
 	pub := &PublicKey{}
 	err := pub.FromHEX("04ee90bfdd4e07eb1cfe9c6342479ca26c0827f84bfe1ab39e32fc3e94a0fe00e6f7d8cd895704e974978766dd0f9fad3c97b1a0f23684e93b400cc9022b7ae532")

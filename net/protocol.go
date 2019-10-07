@@ -100,6 +100,14 @@ var (
 	SizeError = errors.New("data size error")
 )
 
+func HASH256To(b []byte, h *HashID) {
+	copy((*h)[:], util.HASH256(b))
+}
+
+func HASH160To(b []byte, h []byte) {
+	copy(h, util.HASH160(b))
+}
+
 type MsgIO interface {
 	Write(h *NetHeader)
 	Read(h *NetHeader)
