@@ -8,7 +8,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 )
 
 const (
@@ -306,7 +305,7 @@ func (txh *TXHeader) ToTX() *TX {
 
 func LoadTX(id HashID, d db.DbImp) (*TX, error) {
 	//from cache get
-	if v, err := Txs.Get(id); err == nil {
+	if v, err := d.TXCacher().Get(id[:]); err == nil {
 		return v.(*TX), nil
 	}
 	//from database
@@ -317,9 +316,7 @@ func LoadTX(id HashID, d db.DbImp) (*TX, error) {
 	}
 	tx := txh.ToTX()
 	//set to cache
-	if err := Txs.Set(id, tx); err != nil {
-		log.Println("TxCacher set error", err)
-	}
+	d.TXCacher().Set(id[:], tx)
 	return tx, nil
 }
 
@@ -335,11 +332,7 @@ func NewTXFrom(tx *TX) *TXHeader {
 
 func (m *TX) Save(d db.DbImp) error {
 	h := NewTXFrom(m)
-	err := d.SetTX(m.Hash[:], h)
-	if err != nil {
-		return err
-	}
-	return Txs.Set(m.Hash, m)
+	return d.SetTX(m.Hash[:], h)
 }
 
 //get pre tx

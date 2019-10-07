@@ -19,3 +19,15 @@ func TestScript(t *testing.T) {
 	stack := script.NewStack()
 	s.Eval(stack, nil, 0, script.SIG_VER_BASE)
 }
+
+func TestMsgBuffer(t *testing.T) {
+	w := NewMsgWriter()
+	w.Write([]byte{0})
+	if w.Len() != 1 {
+		t.Errorf("len error")
+	}
+	w.Write([]byte{1, 2, 3, 4, 5})
+	if w.Len() != 6 {
+		t.Errorf("len error")
+	}
+}

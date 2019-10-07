@@ -19,9 +19,19 @@ func (m *mongoDBImp) DelTX(id []byte) error {
 	return err
 }
 
+//get tx data
 func (m *mongoDBImp) GetTX(id []byte, v interface{}) error {
 	ret := m.txs().FindOne(m, bson.M{"_id": id})
+	if err := ret.Err(); err != nil {
+		return err
+	}
 	return ret.Decode(v)
+}
+
+//check tx exists
+func (m *mongoDBImp) HasTX(id []byte) bool {
+	ret := m.txs().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+	return ret.Err() == nil
 }
 
 //return blockid txs if id exists
