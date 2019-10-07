@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"errors"
 	"log"
 	"testing"
 )
@@ -28,6 +29,9 @@ func TestGetSetTX(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		if !db.HasTX(data.Id) {
+			return errors.New("test hastx error")
+		}
 		v := dt{}
 		err = db.GetTX(data.Id, &v)
 		if err != nil {
@@ -36,6 +40,9 @@ func TestGetSetTX(t *testing.T) {
 		err = db.DelTX(data.Id)
 		if err != nil {
 			return err
+		}
+		if db.HasTX(data.Id) {
+			return errors.New("test hastx error")
 		}
 		return nil
 	})

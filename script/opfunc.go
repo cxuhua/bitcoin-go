@@ -283,8 +283,14 @@ func NewP2PKScript(pub *PublicKey) *Script {
 }
 
 //2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac
+//or
+//4104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5ac
 func (s Script) IsP2PK() bool {
+<<<<<<< HEAD
 	return (s.Len() == 35 && s[0] == 0x21 && s[34] == OP_CHECKSIG) || (s.Len() == 67 && s[0] == 65 && s[66] == OP_CHECKSIG)
+=======
+	return (s.Len() == 35 && s[0] == 0x21 && s[34] == OP_CHECKSIG) || (s.Len() == 67 && s[0] == 0x41 && s[66] == OP_CHECKSIG)
+>>>>>>> 3264f06927b22888b5a710e9427b247ccfb7518a
 }
 
 //00141d0f172a0ecb48aee1be1f2687d2963ae33f71a1

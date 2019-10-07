@@ -1,32 +1,99 @@
 package net
 
 import (
-	"errors"
+	"bitcoin/db"
+	"encoding/hex"
+	"fmt"
+	"io/ioutil"
+	"log"
+	"net/http"
 	"sync"
 	"time"
 )
-
-var (
-	ErrNotFound   = errors.New("not found")
-	ErrCacherFull = errors.New("cacher fill")
-)
-
-//save valid tx info
-type MemoryCacher interface {
-	Get(id HashID) (interface{}, error)
-	Set(id HashID, v interface{}) error
-	Del(id HashID)
-	Clean()
-}
 
 var (
 	//tx memory cacher
 	Txs = NewMemoryCacher(1024*2, time.Minute*30)
 	//block memory cacher
 	Bxs = NewMemoryCacher(256, time.Minute*60)
+	//test download tx data cacher
+	Dxs = &networkCache{}
+	//test file tx data cache
+	Fxs = &filekCache{}
 )
 
-func NewMemoryCacher(max int, timeout time.Duration) MemoryCacher {
+//from ../dat get tx
+type filekCache struct {
+}
+
+func (c *filekCache) Clean() {
+	//log.Println("test use")
+}
+
+func (c *filekCache) Del(id []byte) {
+	//log.Println("test use")
+}
+
+func (c *filekCache) Get(id []byte) (interface{}, error) {
+	hid := HashID{}
+	copy(hid[:], id)
+	path := fmt.Sprintf("../dat/tx%s.dat", hid)
+	dat, err := ioutil.ReadFile(path)
+	if err != nil {
+		return nil, err
+	}
+	h := NewNetHeader(dat)
+	tx := &TX{}
+	tx.Read(h)
+	return tx, nil
+}
+
+func (c *filekCache) Set(id []byte, v interface{}) error {
+	//log.Println("test use")
+	return nil
+}
+
+//from btc.com get tx data
+type networkCache struct {
+}
+
+func (c *networkCache) Clean() {
+	//log.Println("test use")
+}
+
+func (c *networkCache) Del(id []byte) {
+	//log.Println("test use")
+}
+
+func (c *networkCache) Get(id []byte) (interface{}, error) {
+	hid := HashID{}
+	copy(hid[:], id)
+	url := fmt.Sprintf("https://btc.com/%s.rawhex", hid)
+	log.Printf("Download TX %s raw data,from %s\n", hid, url)
+	resp, err := http.Get(url)
+	if err != nil {
+		log.Printf("Download %s error %v\n", hid, err)
+		return nil, err
+	}
+	decoder := hex.NewDecoder(resp.Body)
+	dat, err := ioutil.ReadAll(decoder)
+	if err != nil {
+		log.Printf("Download %s error %v\n", hid, err)
+		return nil, err
+	}
+	log.Printf("Download %s OK\n", hid)
+	h := NewNetHeader(dat)
+	tx := &TX{}
+	tx.Read(h)
+	return tx, nil
+}
+
+func (c *networkCache) Set(id []byte, v interface{}) error {
+	//log.Println("test use")
+	return nil
+}
+
+func NewMemoryCacher(max int, timeout time.Duration) db.DbCacher {
 	return &memoryCacher{
 		txs:     map[string]*memoryElement{},
 		max:     max,
@@ -68,41 +135,44 @@ func (c *memoryCacher) Clean() {
 	c.clean()
 }
 
-func (c *memoryCacher) Del(id HashID) {
+func (c *memoryCacher) Del(id []byte) {
 	c.rw.Lock()
 	defer c.rw.Unlock()
-	delete(c.txs, id.String())
+	key := hex.EncodeToString(id)
+	delete(c.txs, key)
 }
 
-func (c *memoryCacher) Get(id HashID) (interface{}, error) {
+func (c *memoryCacher) Get(id []byte) (interface{}, error) {
 	c.rw.Lock()
 	defer c.rw.Unlock()
-	ele, ok := c.txs[id.String()]
+	key := hex.EncodeToString(id)
+	ele, ok := c.txs[key]
 	if !ok {
-		return nil, ErrNotFound
+		return nil, db.ErrNotFound
 	}
 	if time.Now().Sub(ele.tv) >= c.timeout {
-		delete(c.txs, id.String())
-		return nil, ErrNotFound
+		delete(c.txs, key)
+		return nil, db.ErrNotFound
 	}
 	ele.tv = time.Now()
 	return ele.value, nil
 }
 
-func (c *memoryCacher) Set(id HashID, v interface{}) error {
+func (c *memoryCacher) Set(id []byte, v interface{}) error {
 	c.rw.Lock()
 	defer c.rw.Unlock()
+	key := hex.EncodeToString(id)
 	if len(c.txs) >= c.max {
 		c.clean()
 	}
 	if len(c.txs) >= c.max {
-		return ErrCacherFull
+		return db.ErrCacherFull
 	}
-	ele, ok := c.txs[id.String()]
+	ele, ok := c.txs[key]
 	if ok {
 		ele.tv = time.Now()
 	} else {
-		c.txs[id.String()] = &memoryElement{tv: time.Now(), value: v}
+		c.txs[key] = &memoryElement{tv: time.Now(), value: v}
 	}
 	return nil
 }

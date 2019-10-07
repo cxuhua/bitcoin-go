@@ -20,9 +20,16 @@ const (
 
 type MsgBuffer struct {
 	Payload []byte //payload raw data
-	io.ReadWriteSeeker
+	io.ReadWriter
 	rwpos  int
 	rwflag int
+}
+
+func NewMsgWriter() *MsgBuffer {
+	return NewMsgBuffer([]byte{}, MSG_BUFFER_WRITE)
+}
+func NewMsgReader(b []byte) *MsgBuffer {
+	return NewMsgBuffer(b, MSG_BUFFER_READ)
 }
 
 func NewMsgBuffer(b []byte, rw int) *MsgBuffer {
@@ -67,6 +74,14 @@ func (m *MsgBuffer) Read(p []byte) (n int, err error) {
 	return len(p), nil
 }
 
+func (m *MsgBuffer) End() int {
+	return len(m.Payload) - 1
+}
+
+func (m *MsgBuffer) Len() int {
+	return len(m.Payload)
+}
+
 func (m *MsgBuffer) Write(p []byte) (n int, err error) {
 	l := len(p)
 	if l == 0 {
@@ -75,23 +90,6 @@ func (m *MsgBuffer) Write(p []byte) (n int, err error) {
 	m.Payload = append(m.Payload, p...)
 	m.rwpos += l
 	return l, nil
-}
-
-func (m *MsgBuffer) Seek(offset int64, whence int) (int64, error) {
-	if whence == io.SeekStart {
-		m.rwpos = int(offset)
-		m.rwpos = int(offset)
-	} else if whence == io.SeekCurrent {
-		m.rwpos += int(offset)
-		m.rwpos += int(offset)
-	} else {
-		m.rwpos = len(m.Payload) + int(offset)
-		m.rwpos = len(m.Payload) + int(offset)
-	}
-	if m.rwpos >= len(m.Payload) {
-		return 0, io.EOF
-	}
-	return 0, nil
 }
 
 func (b *MsgBuffer) Skip(l int) {
@@ -254,6 +252,22 @@ func (m *MsgBuffer) ReadUInt32() uint32 {
 }
 
 func (m *MsgBuffer) WriteUInt32(v uint32) {
+	err := binary.Write(m, ByteOrder, v)
+	if err != nil {
+		panic(err)
+	}
+}
+
+func (m *MsgBuffer) ReadInt32() int32 {
+	v := int32(0)
+	err := binary.Read(m, ByteOrder, &v)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
+func (m *MsgBuffer) WriteInt32(v int32) {
 	err := binary.Write(m, ByteOrder, v)
 	if err != nil {
 		panic(err)

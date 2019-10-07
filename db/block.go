@@ -24,6 +24,12 @@ func (m *mongoDBImp) GetBK(id []byte, v interface{}) error {
 	return ret.Decode(v)
 }
 
+//check tx exists
+func (m *mongoDBImp) HasBK(id []byte) bool {
+	ret := m.blocks().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+	return ret.Err() == nil
+}
+
 //save tans data
 func (m *mongoDBImp) SetBK(id []byte, v interface{}) error {
 	switch v.(type) {
