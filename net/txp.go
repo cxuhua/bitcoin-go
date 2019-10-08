@@ -3,11 +3,9 @@ package net
 import (
 	"bitcoin/db"
 	"bitcoin/script"
-	"bitcoin/util"
 	"bytes"
 	"encoding/hex"
 	"errors"
-	"fmt"
 )
 
 const (
@@ -137,50 +135,6 @@ type TxIn struct {
 	Script   *script.Script
 	Sequence uint32
 	Witness  *TxWitnesses
-}
-
-//lock script
-func (m *TxIn) Eval(stack *script.Stack, lock *script.Script, checker script.SigChecker) error {
-	if lock == nil || m.Script == nil {
-		return errors.New("script miss")
-	}
-	if lock.IsP2PKH() || lock.IsP2PK() {
-		err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
-		if err != nil {
-			return err
-		}
-		return lock.Eval(stack, checker, script.SCRIPT_VERIFY_NULLFAIL, script.SIG_VER_BASE)
-	}
-	if lock.IsP2SH() {
-		//check hash160 value
-		err := m.Script.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
-		if err != nil {
-			return err
-		}
-		err = lock.Eval(stack, checker, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
-		if err != nil {
-			return err
-		}
-		if stack.Len() < 1 {
-			return errors.New("check hash160 top value miss")
-		}
-		if !stack.Top(-1).ToBool() {
-			return errors.New("check hash160 value not equal")
-		}
-		if m.Witness == nil {
-			return errors.New("P2SH Witness script miss")
-		}
-		if len(m.Witness.Script) < 2 {
-			return errors.New("P2SH Witness script num < 2")
-		}
-		if m.Script.IsP2WPKH() {
-			sigdata := m.Witness.Script[0].Bytes()
-			pubdata := m.Witness.Script[1].Bytes()
-			err = checker.CheckSig(sigdata, pubdata, script.SIG_VER_WITNESS_V0)
-		}
-		return err
-	}
-	return errors.New("lock not support")
 }
 
 func (m *TxIn) Clone() *TxIn {
@@ -333,87 +287,6 @@ func NewTXFrom(tx *TX) *TXHeader {
 func (m *TX) Save(d db.DbImp) error {
 	h := NewTXFrom(m)
 	return d.SetTX(m.Hash[:], h)
-}
-
-//get pre tx
-func (m *TX) GetPrevTx(i int, d db.DbImp) (*TX, error) {
-	in := m.Ins[i]
-	return LoadTX(in.OutHash, d)
-}
-
-//verify tx data
-func (m *TX) Verify(db db.DbImp) error {
-	if err := m.Check(); err != nil {
-		return fmt.Errorf("check tx error %v", err)
-	}
-	if m.IsCoinBase() {
-		stack := script.NewStack()
-		return m.Ins[0].Script.Eval(stack, nil, script.SCRIPT_VERIFY_NONE, script.SIG_VER_BASE)
-	}
-	//verify txin
-	for i, v := range m.Ins {
-		ptx, err := m.GetPrevTx(i, db)
-		if err != nil {
-			return err
-		}
-		if v.OutIndex < 0 || int(v.OutIndex) >= len(ptx.Outs) {
-			return errors.New("pre tx data miss")
-		}
-		//get tx for hash data
-		locks := ptx.Outs[v.OutIndex].Script
-		if locks == nil || locks.Len() == 0 {
-			return errors.New("lock script error")
-		}
-		checker := NewTxSigChecker(m, ptx, i)
-		stack := script.NewStack()
-		if err := v.Eval(stack, locks, checker); err != nil {
-			return fmt.Errorf("tx in %d eval error %v", i, err)
-		}
-	}
-	return nil
-}
-
-func (m *TX) GetOutputsHash(idx int, ht byte) []byte {
-	lht := ht & 0x1f
-	if lht != script.SIGHASH_SINGLE && lht != script.SIGHASH_NONE {
-		h := NewNetHeader()
-		for _, v := range m.Outs {
-			v.Write(h)
-		}
-		return util.HASH256(h.Payload)
-	} else if lht == script.SIGHASH_SINGLE && idx < len(m.Outs) {
-		h := NewNetHeader()
-		m.Outs[idx].Write(h)
-		return util.HASH256(h.Payload)
-	} else {
-		hash := HashID{}
-		return hash[:]
-	}
-}
-
-func (m *TX) GetPrevoutHash(idx int, ht byte) []byte {
-	if ht&script.SIGHASH_ANYONECANPAY != 0 {
-		hash := HashID{}
-		return hash[:]
-	}
-	h := NewNetHeader()
-	for _, v := range m.Ins {
-		h.WriteBytes(v.OutHash[:])
-		h.WriteUInt32(v.OutIndex)
-	}
-	return util.HASH256(h.Payload)
-}
-
-func (m *TX) GetSequenceHash(idx int, ht byte) []byte {
-	if ht&script.SIGHASH_ANYONECANPAY != 0 || (ht&0x1f) == script.SIGHASH_SINGLE || (ht&0x1f) == script.SIGHASH_NONE {
-		hash := HashID{}
-		return hash[:]
-	}
-	h := NewNetHeader()
-	for _, v := range m.Ins {
-		h.WriteUInt32(v.Sequence)
-	}
-	return util.HASH256(h.Payload)
 }
 
 func (m *TX) Clone() *TX {

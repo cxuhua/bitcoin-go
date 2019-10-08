@@ -2,8 +2,7 @@ package main
 
 import (
 	"bitcoin/net"
-	"bitcoin/util"
-	"encoding/hex"
+	"bytes"
 	"log"
 	"testing"
 	"time"
@@ -27,6 +26,7 @@ func TestRunClient(t *testing.T) {
 type X [20]byte
 
 func TestCopy(t *testing.T) {
-	d, _ := hex.DecodeString("86d6bcb9d5a7e172d8f29b3b11ac62ab5c8d227209f9f54053494784873fc3")
-	log.Println(hex.EncodeToString(util.HASH160(d)))
+	var a []byte
+	var b []byte
+	log.Println(bytes.Equal(a, b))
 }

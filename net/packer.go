@@ -1,13 +1,19 @@
 package net
 
 import (
-	"bitcoin/db"
 	"bitcoin/script"
 	"fmt"
 )
 
+//get sig script interface
+type ISigScript interface {
+	SigScript() *script.Script
+}
+
 type SigPacker interface {
-	Pack(db db.DbImp) ([]byte, error)
+	//pack sig data
+	//imp get sig script code
+	Pack(imp ISigScript) ([]byte, error)
 }
 
 type baseSigPacker struct {
@@ -19,7 +25,7 @@ type baseSigPacker struct {
 	typ TXType //tx type
 }
 
-func (sp *baseSigPacker) Pack(db db.DbImp) ([]byte, error) {
+func (sp *baseSigPacker) Pack(imp ISigScript) ([]byte, error) {
 	if sp.ht != script.SIGHASH_ALL {
 		return nil, fmt.Errorf("hash type %d not support imp", sp.ht)
 	}
@@ -87,28 +93,14 @@ func (sp *witnessPacker) getSequenceHash() HashID {
 	return hash
 }
 
-func (sp *witnessPacker) getScriptCode() *script.Script {
-	if sp.in.Script.IsP2WPKH() {
-		hash := sp.in.Script.SubBytes(3, 23)
-		ns := &script.Script{}
-		ns = ns.PushOp(script.OP_DUP)
-		ns = ns.PushOp(script.OP_HASH160)
-		ns = ns.PushBytes(hash)
-		ns = ns.PushOp(script.OP_EQUALVERIFY)
-		ns = ns.PushOp(script.OP_CHECKSIG)
-		return ns
-	}
-	return nil
-}
-
-func (sp *witnessPacker) Pack(db db.DbImp) ([]byte, error) {
+func (sp *witnessPacker) Pack(imp ISigScript) ([]byte, error) {
 	m := NewMsgWriter()
-	m.WriteUInt32(uint32(sp.ctx.Ver))
+	m.WriteInt32(sp.ctx.Ver)
 	m.WriteHash(sp.getPrevoutHash())
 	m.WriteHash(sp.getSequenceHash())
 	m.WriteHash(sp.in.OutHash)
 	m.WriteUInt32(sp.in.OutIndex)
-	m.WriteScript(sp.getScriptCode())
+	m.WriteScript(imp.SigScript())
 	m.WriteUInt64(sp.out.Value)
 	m.WriteUInt32(sp.in.Sequence)
 	m.WriteHash(sp.getOutputsHash())

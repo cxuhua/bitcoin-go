@@ -1,7 +1,6 @@
 package script
 
 import (
-	"bitcoin/util"
 	"encoding/binary"
 	"errors"
 )
@@ -9,7 +8,7 @@ import (
 const (
 	INT_MAX           = int(^uint(0) >> 1)
 	INT_MIN           = ^INT_MAX
-	DEFAULT_MINI_SIZE = 4
+	DEFAULT_MINI_SIZE = 5
 )
 
 type ScriptNum int64
@@ -35,18 +34,10 @@ func CastToBool(vch []byte) bool {
 	return false
 }
 
-func GetScriptNum(b []byte, mini bool, max int) ScriptNum {
+func GetScriptNum(b []byte) ScriptNum {
 	bl := len(b)
-	if bl > max {
+	if bl > DEFAULT_MINI_SIZE {
 		panic(errors.New("script number overflow"))
-	}
-	if mini && bl > 0 {
-		lv := b[bl-1]
-		if lv&0x7f == 0 {
-			if bl <= 1 || (b[bl-2]&0x80) == 0 {
-				panic(errors.New("non-minimally encoded script number"))
-			}
-		}
 	}
 	if bl == 0 {
 		return ScriptNum(0)
@@ -93,7 +84,7 @@ func IsValidSignatureEncoding(sig []byte) bool {
 	if sig[4]&0x80 != 0 {
 		return false
 	}
-	if lenR > 1 && (sig[4] == 0x00) && (sig[5]&0x80 != 0) {
+	if lenR > 1 && (sig[4] == 0x00) && (sig[5]&0x80 == 0) {
 		return false
 	}
 	if sig[lenR+4] != 0x02 {
@@ -105,34 +96,7 @@ func IsValidSignatureEncoding(sig []byte) bool {
 	if sig[lenR+6]&0x80 != 0 {
 		return false
 	}
-	if lenS > 1 && (sig[lenR+6] == 0x00) && (sig[lenR+7]&0x80) != 0 {
-		return false
-	}
-	return true
-}
-
-func PubKeyCheckLowS(pk []byte) bool {
-	return true
-}
-
-func IsLowDERSignature(sig []byte) error {
-	if !IsValidSignatureEncoding(sig) {
-		return SCRIPT_ERR_SIG_DER
-	}
-	cpy := make([]byte, len(sig))
-	copy(cpy, sig)
-	if !PubKeyCheckLowS(cpy) {
-		return SCRIPT_ERR_SIG_HIGH_S
-	}
-	return nil
-}
-
-func IsDefinedHashtypeSignature(sig []byte) bool {
-	if len(sig) == 0 {
-		return false
-	}
-	htype := sig[len(sig)-1] & (^byte(SIGHASH_ANYONECANPAY))
-	if htype < SIGHASH_ALL || htype > SIGHASH_SINGLE {
+	if lenS > 1 && (sig[lenR+6] == 0x00) && (sig[lenR+7]&0x80) == 0 {
 		return false
 	}
 	return true
@@ -154,44 +118,6 @@ func IsCompressedOrUncompressedPubKey(pb []byte) bool {
 		return false
 	}
 	return true
-}
-
-func IsCompressedPubKey(pb []byte) bool {
-	if len(pb) != COMPRESSED_PUBLIC_KEY_SIZE {
-		return false
-	}
-	if pb[0] != 0x02 && pb[0] != 0x03 {
-		return false
-	}
-	return true
-}
-
-func CheckPubKeyEncoding(pb []byte, flags uint32, sigver SigVersion) error {
-	if (flags&SCRIPT_VERIFY_STRICTENC) != 0 && !IsCompressedOrUncompressedPubKey(pb) {
-		return SCRIPT_ERR_PUBKEYTYPE
-	}
-	if (flags&SCRIPT_VERIFY_WITNESS_PUBKEYTYPE) != 0 && sigver == SIG_VER_WITNESS_V0 && !IsCompressedPubKey(pb) {
-		return SCRIPT_ERR_WITNESS_PUBKEYTYPE
-	}
-	return nil
-}
-
-func CheckSignatureEncoding(sig []byte, flags uint32) error {
-	if len(sig) == 0 {
-		return nil
-	}
-	if (flags&(SCRIPT_VERIFY_DERSIG|SCRIPT_VERIFY_LOW_S|SCRIPT_VERIFY_STRICTENC)) != 0 && !IsValidSignatureEncoding(sig) {
-		return SCRIPT_ERR_SIG_DER
-	}
-	if (flags & SCRIPT_VERIFY_LOW_S) != 0 {
-		if err := IsLowDERSignature(sig); err != nil {
-			return err
-		}
-	}
-	if (flags&SCRIPT_VERIFY_STRICTENC) != 0 && !IsDefinedHashtypeSignature(sig) {
-		return SCRIPT_ERR_SIG_HASHTYPE
-	}
-	return nil
 }
 
 func (v ScriptNum) Serialize() []byte {
@@ -221,18 +147,6 @@ func (v ScriptNum) Serialize() []byte {
 		ret[bi] |= 0x80
 	}
 	return ret
-}
-
-func (s Script) HasValidOps() bool {
-	b := 0
-	for b < len(s) {
-		ok, i, op, item := s.GetOp(b)
-		if !ok || op > MAX_OPCODE || len(item) > MAX_SCRIPT_ELEMENT_SIZE {
-			return false
-		}
-		b = i
-	}
-	return true
 }
 
 /*
@@ -276,12 +190,6 @@ func payToPubKeyScript(serializedPubKey []byte) ([]byte, error) {
 
 */
 
-func NewP2PKScript(pub *PublicKey) *Script {
-	b := pub.Marshal()
-	s := &Script{}
-	return s.PushBytes(b).PushOp(OP_CHECKSIG)
-}
-
 //2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac
 //or
 //4104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5ac
@@ -296,35 +204,9 @@ func (s Script) IsP2WPKH() bool {
 	return s.Len() == 23 && s[0] == 0x16 && s[1] == 0 && s[2] == byte(s.Len()-3)
 }
 
-//IsP2WPKH
-//public key hash to p2pkh script
-//for in
-func (s Script) GetP2PKHScript() *Script {
-	if !s.IsP2WPKH() {
-		panic(errors.New("s not IsP2WPKH"))
-	}
-	ns := &Script{}
-	return ns.PushOp(OP_DUP).PushOp(OP_HASH160).PushBytes(s[3:]).PushOp(OP_EQUALVERIFY).PushOp(OP_CHECKSIG)
-}
-
-func NewP2PKHScript(pub *PublicKey) *Script {
-	s := &Script{}
-	b := pub.Marshal()
-	hv := util.HASH160(b)
-	return s.PushOp(OP_DUP).PushOp(OP_HASH160).PushBytes(hv).PushOp(OP_EQUALVERIFY).PushOp(OP_CHECKSIG)
-}
-
 //for out
 func (s Script) IsP2PKH() bool {
 	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
-}
-
-//for out
-func NewP2SHScript(pub *PublicKey) *Script {
-	s := &Script{}
-	b := pub.Marshal()
-	hv := util.HASH160(b)
-	return s.PushOp(OP_HASH160).PushBytes(hv).PushOp(OP_EQUAL)
 }
 
 //a9144733f37cf4db86fbc2efed2500b4f4e49f31202387
@@ -333,86 +215,37 @@ func (s Script) IsP2SH() bool {
 	return s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
 }
 
-//return ver programe ok
-func (s Script) IsWitnessProgram() (int, []byte, bool) {
-	if s.Len() < 4 || s.Len() > 42 {
-		return 0, nil, false
-	}
-	if s[0] != OP_0 && (s[0] < OP_1 || s[0] > OP_16) {
-		return 0, nil, false
-	}
-	if int(s[1]+2) == s.Len() {
-		ver := DecodeOP(s[0])
-		return ver, s[2:], true
-	}
-	return 0, nil, false
+//for out
+func (s Script) IsP2WSH() bool {
+	return s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20
 }
 
-func (s Script) GetScriptSigOpCount(script *Script) int {
-	if !s.IsP2SH() {
-		return s.GetSigOpCount(true)
+//return lessnum,pubnum
+func (s Script) IsMultiSig() (int, int) {
+	if s[0] < OP_1 || s[0] > OP_16 {
+		return 0, 0
 	}
-	var subd []byte = nil
+	lnum, pnum := 0, 0
 	pc := 0
-	for pc < script.Len() {
-		ok, idx, op, item := script.GetOp(pc)
-		if !ok {
-			return 0
-		}
-		if op > OP_16 {
-			return 0
-		}
-		pc = idx
-		subd = item
-	}
-	sub := NewScript(subd)
-	return sub.GetSigOpCount(true)
-}
-
-func (s Script) GetSigOpCount(accurate bool) int {
-	pc := 0
-	n := 0
-	lastop := byte(OP_INVALIDOPCODE)
-	for pc < s.Len() {
-		ok, idx, op, _ := s.GetOp(pc)
-		if !ok {
+	i := 0
+	for {
+		b, p, op, ops := s.GetOp(i)
+		if !b {
 			break
 		}
-		if op == OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
-			n++
-		} else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
-			if accurate && lastop >= OP_1 && lastop <= OP_16 {
-				n += DecodeOP(lastop)
-			} else {
-				n += MAX_PUBKEYS_PER_MULTISIG
-			}
+		if lnum == 0 && op >= OP_1 && op <= OP_16 {
+			lnum = int(op-OP_1) + 1
+		} else if pnum == 0 && op >= OP_1 && op <= OP_16 {
+			pnum = int(op-OP_1) + 1
+		} else if IsCompressedOrUncompressedPubKey(ops) {
+			pc++
 		}
-		pc = idx
-		lastop = op
+		i = p
 	}
-	return n
-}
-
-func (s Script) IsPushOnly(idx int) (int, bool) {
-	for idx < s.Len() {
-		ok, pos, op, _ := s.GetOp(idx)
-		if !ok {
-			return idx, false
-		}
-		if op > OP_16 {
-			return idx, false
-		}
-		idx = pos
+	if pc != pnum || lnum > pnum {
+		return 0, 0
 	}
-	return idx, true
-}
-
-func (s Script) IsPayToWitnessScriptHash() bool {
-	return (s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20)
-}
-
-func (s Script) IsUnspendable() bool {
-	return (s.Len() > 0 && s[0] == OP_RETURN) || (s.Len() > MAX_SCRIPT_SIZE)
+	return lnum, pnum
 }
 
 func (s *Script) PushInt64(v int64) *Script {
@@ -428,6 +261,16 @@ func (s *Script) PushInt64(v int64) *Script {
 
 func (s *Script) PushOp(v byte) *Script {
 	*s = append(*s, v)
+	return s
+}
+
+func (s *Script) Clean() *Script {
+	*s = (*s)[0:0]
+	return s
+}
+
+func (s *Script) Concat(v *Script) *Script {
+	*s = append(*s, *v...)
 	return s
 }
 
@@ -451,27 +294,6 @@ func (s *Script) PushBytes(b []byte) *Script {
 	}
 	*s = append(*s, b...)
 	return s
-}
-
-func CheckMinimalPush(ops []byte, op byte) bool {
-	if op > OP_PUSHDATA4 {
-		panic(OpCodeErr)
-	}
-	l := len(ops)
-	if l == 0 {
-		return op == OP_0
-	} else if l == 1 && ops[0] >= 1 && ops[0] <= 16 {
-		return false
-	} else if l == 1 && ops[0] == 0x81 {
-		return false
-	} else if l <= 75 {
-		return op == byte(l)
-	} else if l <= 255 {
-		return op == OP_PUSHDATA1
-	} else if l <= 65535 {
-		return op == OP_PUSHDATA2
-	}
-	return true
 }
 
 //return ok,idx,op,ops

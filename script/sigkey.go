@@ -231,53 +231,6 @@ func NewPublicKey(data []byte) (*PublicKey, error) {
 	return pk, err
 }
 
-//return addr,script bytes,error
-func GetPublicAddress(tx int, pubs []*PublicKey, opt ...interface{}) (string, []byte, error) {
-	if len(pubs) == 0 {
-		return "", nil, errors.New("pub error")
-	}
-	switch tx {
-	case TX_P2PKH:
-		if len(pubs) != 1 {
-			return "", nil, errors.New("TX_P2PKH pub one")
-		}
-		bv := pubs[0].Marshal()
-		addr := util.P2PKHAddress(bv)
-		return addr, bv, nil
-	case TX_P2SH_MULTISIG:
-		//support 2-3
-		if len(pubs) != 3 {
-			return "", nil, errors.New("TX_P2SH_MULTISIG need 3 public")
-		}
-		buf := &bytes.Buffer{}
-		buf.WriteByte(byte(OP_2))
-		for _, v := range pubs {
-			kv := v.Marshal()
-			buf.WriteByte(byte(len(kv)))
-			buf.Write(kv)
-		}
-		buf.WriteByte(OP_3)
-		buf.WriteByte(OP_CHECKMULTISIG)
-		sv := buf.Bytes()
-		addr := util.P2SHAddress(sv)
-		return addr, sv, nil
-	case TX_P2SH_WPKH_V0:
-		if len(pubs) != 1 {
-			return "", nil, errors.New("TX_P2SH_WPKH_V0 pub one")
-		}
-		bv := pubs[0].Marshal()
-		hv := util.HASH160(bv)
-		buf := &bytes.Buffer{}
-		buf.WriteByte(0)
-		buf.WriteByte(byte(len(hv)))
-		buf.Write(hv)
-		bs := buf.Bytes()
-		addr := util.P2SHAddress(bs)
-		return addr, bs, nil
-	}
-	return "", nil, errors.New("tx type error")
-}
-
 //pay to script address
 func (pk PublicKey) P2SHAddress() string {
 	return util.P2SHAddress(pk.Marshal())

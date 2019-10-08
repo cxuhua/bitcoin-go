@@ -19,29 +19,6 @@ const (
 	LOCKTIME_MAX             = uint32(0xFFFFFFFF)
 )
 
-const (
-	WITNESS_V0_SCRIPTHASH_SIZE = 32
-	WITNESS_V0_KEYHASH_SIZE    = 20
-)
-
-const (
-	TX_NONSTANDARD = iota //coinbase
-	TX_P2PKH
-	TX_P2SH_MULTISIG
-	TX_P2SH_WPKH_V0
-	TX_P2WPKH_V0
-
-	// 'standard' transaction types:
-	TX_PUBKEY
-	TX_PUBKEYHASH
-	TX_SCRIPTHASH
-	TX_MULTISIG
-	TX_NULL_DATA //!< unspendable OP_RETURN script that carries data
-	TX_WITNESS_V0_SCRIPTHASH
-	TX_WITNESS_V0_KEYHASH
-	TX_WITNESS_UNKNOWN //!< Only for Witness versions not already defined above
-)
-
 type OpCodeType byte
 
 const (
@@ -185,36 +162,9 @@ const (
 	MAX_OPCODE = OP_NOP10
 )
 
-const (
-	SIG_VER_BASE                       = 0
-	SIG_VER_WITNESS_V0                 = 1
-	SIG_VER_WITNESS_V0_SCRIPTHASH_SIZE = 32
-	SIG_VER_WITNESS_V0_KEYHASH_SIZE    = 20
-)
-
 var (
 	OpCodeErr = errors.New("op code error")
 )
-
-func DecodeOP(opcode byte) int {
-	if opcode == OP_0 {
-		return 0
-	}
-	if opcode < OP_1 || opcode > OP_16 {
-		panic(OpCodeErr)
-	}
-	return int(opcode) - int(OP_1-1)
-}
-
-func EncodeOP(n int) byte {
-	if n < 0 || n > 16 {
-		panic(OpCodeErr)
-	}
-	if n == 0 {
-		return OP_0
-	}
-	return byte(OP_1 + n - 1)
-}
 
 //disable op
 func OpIsDisabled(op byte) bool {
@@ -265,36 +215,10 @@ func (s Script) Bytes() []byte {
 }
 
 const (
-	N_ZERO = ScriptNum(0)
-	N_ONE  = ScriptNum(1)
-)
-
-const (
 	SIGHASH_ALL          = 1
 	SIGHASH_NONE         = 2
 	SIGHASH_SINGLE       = 3
 	SIGHASH_ANYONECANPAY = 0x80
-)
-
-const (
-	SCRIPT_VERIFY_NONE                                  = 0
-	SCRIPT_VERIFY_P2SH                                  = uint32(1) << 0
-	SCRIPT_VERIFY_STRICTENC                             = uint32(1) << 1
-	SCRIPT_VERIFY_DERSIG                                = uint32(1) << 2
-	SCRIPT_VERIFY_LOW_S                                 = uint32(1) << 3
-	SCRIPT_VERIFY_NULLDUMMY                             = uint32(1) << 4
-	SCRIPT_VERIFY_SIGPUSHONLY                           = uint32(1) << 5
-	SCRIPT_VERIFY_MINIMALDATA                           = uint32(1) << 6
-	SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS            = uint32(1) << 7
-	SCRIPT_VERIFY_CLEANSTACK                            = uint32(1) << 8
-	SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY                   = uint32(1) << 9
-	SCRIPT_VERIFY_CHECKSEQUENCEVERIFY                   = uint32(1) << 10
-	SCRIPT_VERIFY_WITNESS                               = uint32(1) << 11
-	SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM = uint32(1) << 12
-	SCRIPT_VERIFY_MINIMALIF                             = uint32(1) << 13
-	SCRIPT_VERIFY_NULLFAIL                              = uint32(1) << 14
-	SCRIPT_VERIFY_WITNESS_PUBKEYTYPE                    = uint32(1) << 15
-	SCRIPT_VERIFY_CONST_SCRIPTCODE                      = uint32(1) << 16
 )
 
 func (s Script) SubBytes(b, e int) []byte {
@@ -305,19 +229,30 @@ func (s Script) SubScript(b, e int) *Script {
 	return NewScript(s.SubBytes(b, e))
 }
 
+func StackTopBool(stack *Stack, idx int) bool {
+	if stack == nil || -idx > stack.Len() {
+		return false
+	}
+	return stack.Top(idx).ToBool()
+}
+
+var (
+	VsFalse = []byte{0}
+	VsTrue  = []byte{1, 1}
+)
+
 //stack []byte
-func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigVersion) error {
-	vchFalse := []byte{0}
-	vchTrue := []byte{1, 1}
+func (s Script) Eval(stack *Stack, checker SigChecker) error {
+	if s.Len() > MAX_SCRIPT_SIZE {
+		return SCRIPT_ERR_STACK_SIZE
+	}
 	pc, pe := 0, s.Len()
-	pb := pc
 	vfExec := NewStack() //bool list
 	blf := func(v Value) bool {
 		return v.ToBool() == false
 	}
 	alts := NewStack()
 	opc := 0
-	fbMini := (flags & SCRIPT_VERIFY_MINIMALDATA) != 0
 	for pc < pe {
 		fexec := vfExec.Count(blf) == 0
 		ok, idx, op, ops := s.GetOp(pc)
@@ -332,14 +267,7 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 		if OpIsDisabled(op) {
 			return SCRIPT_ERR_DISABLED_OPCODE
 		}
-		if op == OP_CODESEPARATOR && sigver == SIG_VER_BASE && flags&SCRIPT_VERIFY_CONST_SCRIPTCODE != 0 {
-			return SCRIPT_ERR_OP_CODESEPARATOR
-		}
-		if fexec && 0 <= op && op <= OP_PUSHDATA4 {
-			if fbMini && !CheckMinimalPush(ops, op) {
-				return SCRIPT_ERR_MINIMALDATA
-			}
-			//log.Println(op, hex.EncodeToString(ops))
+		if fexec && 0 < op && op <= OP_PUSHDATA4 {
 			stack.Push(ops)
 		} else if fexec || (OP_IF <= op && op <= OP_ENDIF) {
 			switch op {
@@ -349,14 +277,11 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 			case OP_NOP:
 				break
 			case OP_CHECKLOCKTIMEVERIFY:
-				if flags&SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY == 0 {
-					break
-				}
 				t1 := stack.Top(-1)
 				if t1 == nil {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-				locktime := t1.ToScriptNum(fbMini, 5)
+				locktime := t1.ToScriptNum()
 				if locktime < 0 {
 					return SCRIPT_ERR_NEGATIVE_LOCKTIME
 				}
@@ -364,14 +289,11 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 					return fmt.Errorf("check locak time error %v", SCRIPT_ERR_UNSATISFIED_LOCKTIME)
 				}
 			case OP_CHECKSEQUENCEVERIFY:
-				if flags&SCRIPT_VERIFY_CHECKSEQUENCEVERIFY == 0 {
-					break
-				}
 				t1 := stack.Top(-1)
 				if t1 == nil {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-				seq := t1.ToScriptNum(fbMini, 5)
+				seq := t1.ToScriptNum()
 				if seq < 0 {
 					return SCRIPT_ERR_NEGATIVE_LOCKTIME
 				}
@@ -382,9 +304,6 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 					return fmt.Errorf("check sequence error %v", SCRIPT_ERR_UNSATISFIED_LOCKTIME)
 				}
 			case OP_NOP1, OP_NOP4, OP_NOP5, OP_NOP6, OP_NOP7, OP_NOP8, OP_NOP9, OP_NOP10:
-				if flags&SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS != 0 {
-					return SCRIPT_ERR_DISCOURAGE_UPGRADABLE_NOPS
-				}
 			case OP_IF, OP_NOTIF:
 				fValue := false
 				if fexec {
@@ -392,14 +311,6 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 						return SCRIPT_ERR_UNBALANCED_CONDITIONAL
 					}
 					vch := stack.Top(-1)
-					if sigver == SIG_VER_WITNESS_V0 && flags&SCRIPT_VERIFY_MINIMALIF != 0 {
-						if vch.Len() > 1 {
-							return SCRIPT_ERR_MINIMALIF
-						}
-						if vch.Len() == 1 && vch[0] != 1 {
-							return SCRIPT_ERR_MINIMALIF
-						}
-					}
 					fValue = vch.ToBool()
 					if op == OP_NOTIF {
 						fValue = !fValue
@@ -529,7 +440,7 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
 				v1 := stack.Top(-1).ToBytes()
-				n := GetScriptNum(v1, fbMini, DEFAULT_MINI_SIZE).ToInt()
+				n := GetScriptNum(v1).ToInt()
 				stack.Pop()
 				if n < 0 || n >= stack.Len() {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
@@ -578,9 +489,9 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				stack.Pop()
 				fEqual := bytes.Equal(v1, v2)
 				if fEqual {
-					stack.Push(vchTrue)
+					stack.Push(VsTrue)
 				} else {
-					stack.Push(vchFalse)
+					stack.Push(VsFalse)
 				}
 				if op == OP_EQUALVERIFY {
 					if fEqual {
@@ -593,7 +504,7 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				if stack.Len() < 1 {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-				bn := stack.Top(-1).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				bn := stack.Top(-1).ToScriptNum()
 				switch op {
 				case OP_1ADD:
 					bn++
@@ -624,8 +535,8 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				if stack.Len() < 2 {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-				bn1 := stack.Top(-2).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
-				bn2 := stack.Top(-1).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				bn1 := stack.Top(-2).ToScriptNum()
+				bn2 := stack.Top(-1).ToScriptNum()
 				bn := ScriptNum(0)
 				switch op {
 				case OP_ADD:
@@ -714,17 +625,17 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				if stack.Len() < 3 {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-				bn1 := stack.Top(-3).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
-				bn2 := stack.Top(-2).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
-				bn3 := stack.Top(-1).ToScriptNum(fbMini, DEFAULT_MINI_SIZE)
+				bn1 := stack.Top(-3).ToScriptNum()
+				bn2 := stack.Top(-2).ToScriptNum()
+				bn3 := stack.Top(-1).ToScriptNum()
 				fvalue := (bn2 <= bn1 && bn1 < bn3)
 				stack.Pop()
 				stack.Pop()
 				stack.Pop()
 				if fvalue {
-					stack.Push(vchTrue)
+					stack.Push(VsTrue)
 				} else {
-					stack.Push(vchFalse)
+					stack.Push(VsFalse)
 				}
 			case OP_RIPEMD160, OP_SHA1, OP_SHA256, OP_HASH160, OP_HASH256:
 				if stack.Len() < 1 {
@@ -748,39 +659,44 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				stack.Pop()
 				stack.Push(hv)
 			case OP_CODESEPARATOR:
-				pb = pc
-				log.Println("OP_CODESEPARATOR", pb)
 			case OP_CHECKSIG, OP_CHECKSIGVERIFY:
 				if stack.Len() < 2 {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
 				sig := stack.Top(-2).ToBytes()
-				pk := stack.Top(-1).ToBytes()
-				if err := CheckSignatureEncoding(sig, flags); err != nil {
-					return err
+				pub := stack.Top(-1).ToBytes()
+				if !IsValidSignatureEncoding(sig) {
+					return SCRIPT_ERR_SIG_DER
 				}
-				if err := CheckPubKeyEncoding(pk, flags, sigver); err != nil {
-					return err
+				if !IsCompressedOrUncompressedPubKey(pub) {
+					return SCRIPT_ERR_PUBKEYTYPE
 				}
-				err := checker.CheckSig(sig, pk, sigver)
-				if err != nil && flags&SCRIPT_VERIFY_NULLFAIL != 0 && len(sig) > 0 {
-					return fmt.Errorf("sig error %v", SCRIPT_ERR_SIG_NULLFAIL)
-				}
+				err := checker.CheckSig(stack, sig, pub)
 				stack.Pop()
 				stack.Pop()
+				if err != nil {
+					stack.Push(VsTrue)
+				} else {
+					stack.Push(VsFalse)
+				}
 				if op == OP_CHECKSIGVERIFY {
 					if err == nil {
 						stack.Pop()
 					} else {
-						return SCRIPT_ERR_CHECKSIGVERIFY
+						return err
 					}
 				}
 			case OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY:
+				//([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys
+				for j := 1; j <= stack.Len(); j++ {
+					vv := stack.Top(-j)
+					log.Println(hex.EncodeToString(vv))
+				}
 				i := 1
 				if stack.Len() < i {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-				keyscount := stack.Top(-1).ToInt(fbMini, DEFAULT_MINI_SIZE)
+				keyscount := stack.Top(-1).ToInt()
 				if keyscount < 0 || keyscount > MAX_PUBKEYS_PER_MULTISIG {
 					return SCRIPT_ERR_PUBKEY_COUNT
 				}
@@ -790,69 +706,43 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags uint32, sigver SigV
 				}
 				i++
 				ikey1 := i
-				ikey2 := keyscount + 2
+				ikey2 := ikey1 + keyscount - 1
 				i += keyscount
-				if stack.Len() < i {
+				if stack.Len() < (i - 1) {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-				sigcount := stack.Top(-1).ToInt(fbMini, DEFAULT_MINI_SIZE)
+				sigcount := stack.Top(-i).ToInt()
 				if sigcount < 0 || sigcount > keyscount {
 					return SCRIPT_ERR_SIG_COUNT
 				}
 				i++
-				isig := i
+				isig1 := i
+				isig2 := isig1 + sigcount - 1
 				i += sigcount
-				if stack.Len() < i {
+				if stack.Len() < i-1 {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
 				}
-
-				success := true
-				for success && sigcount > 0 {
+				ikey := ikey1
+				isig := isig1
+				iok := 0
+				for isig <= isig2 && ikey <= ikey2 {
 					sig := stack.Top(-isig).ToBytes()
-					pk := stack.Top(-ikey1).ToBytes()
-					if err := CheckSignatureEncoding(sig, flags); err != nil {
-						return err
+					pub := stack.Top(-ikey).ToBytes()
+					if err := checker.CheckSig(stack, sig, pub); err != nil {
+						ikey++
+						continue
 					}
-					if err := CheckPubKeyEncoding(pk, flags, sigver); err != nil {
-						return err
-					}
-					err := checker.CheckSig(sig, pk, sigver)
-					if err == nil {
-						isig++
-						sigcount++
-					}
-					ikey1++
-					keyscount++
-					if sigcount > keyscount {
-						success = false
-					}
+					iok++
+					isig++
+					ikey++
 				}
-				for i > 1 {
-					v1 := stack.Top(-1).ToBytes()
-					if !success && (flags&SCRIPT_VERIFY_NULLFAIL) != 0 && ikey2 != 0 && len(v1) > 0 {
-						return SCRIPT_ERR_SIG_NULLFAIL
-					}
-					if ikey2 > 0 {
-						ikey2--
-					}
-					stack.Pop()
-					i--
-				}
-				if stack.Len() < 1 {
-					return SCRIPT_ERR_INVALID_STACK_OPERATION
-				}
-				v1 := stack.Top(-1).ToBytes()
-				if (flags&SCRIPT_VERIFY_NULLDUMMY) != 0 && len(v1) > 0 {
-					return SCRIPT_ERR_SIG_NULLDUMMY
-				}
-				stack.Pop()
-				if success {
-					stack.Push(vchTrue)
+				if iok >= sigcount {
+					stack.Push(VsTrue)
 				} else {
-					stack.Push(vchFalse)
+					stack.Push(VsFalse)
 				}
 				if op == OP_CHECKMULTISIGVERIFY {
-					if success {
+					if iok >= sigcount {
 						stack.Pop()
 					} else {
 						return SCRIPT_ERR_CHECKMULTISIGVERIFY

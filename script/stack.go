@@ -27,12 +27,12 @@ func (v Value) ToBool() bool {
 	return CastToBool(v)
 }
 
-func (v Value) ToInt(mini bool, siz int) int {
-	return v.ToScriptNum(mini, siz).ToInt()
+func (v Value) ToInt() int {
+	return v.ToScriptNum().ToInt()
 }
 
-func (v Value) ToScriptNum(mini bool, siz int) ScriptNum {
-	return GetScriptNum(v.ToBytes(), mini, siz)
+func (v Value) ToScriptNum() ScriptNum {
+	return GetScriptNum(v.ToBytes())
 }
 
 type Stack struct {
@@ -83,6 +83,9 @@ func (stack *Stack) TopElement(idx int) *list.Element {
 }
 
 func (stack *Stack) Top(idx int) Value {
+	if idx > 0 {
+		idx = idx - stack.Len() - 1
+	}
 	e := stack.list.Back()
 	if e == nil {
 		return nil
