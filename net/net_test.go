@@ -32,15 +32,7 @@ func TestInfo(t *testing.T) {
 	h2 := NewNetHeader(data2)
 	tx2 := &TX{}
 	tx2.Read(h2)
-	log.Println(hex.EncodeToString(*tx2.Ins[0].Witness.Script[0]))
-
-	xx := tx2.Ins[0].Witness.Script[3].Bytes()
-	log.Println(hex.EncodeToString(xx))
-	xv := util.HASH160(xx)
-	//log.Println(util.BECH32Address(util.HexDecode("701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d")), util.BECH32Address(xx))
-	log.Println(hex.EncodeToString(xv))
-	//log.Println(tx2)
-	//log.Println(tx2.Verify(nil))
+	log.Println(hex.EncodeToString(*tx2.Ins[0].Script))
 }
 
 func TestCloneTX(t *testing.T) {
@@ -74,7 +66,7 @@ func TestSaveTX(t *testing.T) {
 	}
 }
 
-func TestP2WSHSign(t *testing.T) {
+func TestP2WSHOnlySign(t *testing.T) {
 	err := db.UseSession(context.Background(), func(db db.DbImp) error {
 		db.SetTXCacher(Fxs)
 		id := NewHexBHash("2cc59f3c646b3917ed9b5224f71b335a2eab70ca4610a01dee90c2536d35d940")

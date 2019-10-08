@@ -5,7 +5,6 @@ import (
 	"bitcoin/script"
 	"errors"
 	"fmt"
-	"log"
 )
 
 var (
@@ -94,10 +93,6 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 		return TX_P2SH_WSH
 	}
 	if out.Script.IsP2WSH() && in.Script.Len() == 0 {
-		if in.Witness == nil || len(in.Witness.Script) < 1 {
-			log.Println("IsP2WSH witness data miss")
-			return TX_NONE
-		}
 		return TX_ONLY_P2WSH
 	}
 	return TX_NONE
@@ -130,7 +125,7 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 		switch typ {
 		case TX_P2PKH, TX_P2PK:
 			verifyer = &p2pkhVerify{
-				baseVerify{
+				baseVerify: baseVerify{
 					idx: idx,
 					in:  in,
 					out: out,
@@ -140,7 +135,7 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 			}
 		case TX_P2SH_WPKH:
 			verifyer = &p2wpkhVerify{
-				baseVerify{
+				baseVerify: baseVerify{
 					idx: idx,
 					in:  in,
 					out: out,
@@ -150,7 +145,10 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 			}
 		case TX_ONLY_P2WSH:
 			verifyer = &p2wshOnlyVerify{
-				baseVerify{
+				hsidx: -1,
+				less:  -1,
+				size:  -1,
+				baseVerify: baseVerify{
 					idx: idx,
 					in:  in,
 					out: out,

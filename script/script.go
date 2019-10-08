@@ -6,7 +6,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"log"
 )
 
 const (
@@ -688,10 +687,6 @@ func (s Script) Eval(stack *Stack, checker SigChecker) error {
 				}
 			case OP_CHECKMULTISIG, OP_CHECKMULTISIGVERIFY:
 				//([sig ...] num_of_signatures [pubkey ...] num_of_pubkeys
-				for j := 1; j <= stack.Len(); j++ {
-					vv := stack.Top(-j)
-					log.Println(hex.EncodeToString(vv))
-				}
 				i := 1
 				if stack.Len() < i {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
