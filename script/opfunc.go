@@ -285,17 +285,20 @@ func NewP2PKScript(pub *PublicKey) *Script {
 //2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac
 //or
 //4104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5ac
+//for out
 func (s Script) IsP2PK() bool {
 	return (s.Len() == 35 && s[0] == 0x21 && s[34] == OP_CHECKSIG) || (s.Len() == 67 && s[0] == 0x41 && s[66] == OP_CHECKSIG)
 }
 
-//00141d0f172a0ecb48aee1be1f2687d2963ae33f71a1
+//1600146bdeebc5218e565401db3e1c4510eebd2570cc07
+//for in
 func (s Script) IsP2WPKH() bool {
-	return s.Len() == 23 && s[0] == 22 && s[1] == 0 && s[2] == byte(s.Len()-3)
+	return s.Len() == 23 && s[0] == 0x16 && s[1] == 0 && s[2] == byte(s.Len()-3)
 }
 
 //IsP2WPKH
 //public key hash to p2pkh script
+//for in
 func (s Script) GetP2PKHScript() *Script {
 	if !s.IsP2WPKH() {
 		panic(errors.New("s not IsP2WPKH"))
@@ -311,11 +314,12 @@ func NewP2PKHScript(pub *PublicKey) *Script {
 	return s.PushOp(OP_DUP).PushOp(OP_HASH160).PushBytes(hv).PushOp(OP_EQUALVERIFY).PushOp(OP_CHECKSIG)
 }
 
-//
+//for out
 func (s Script) IsP2PKH() bool {
 	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
 }
 
+//for out
 func NewP2SHScript(pub *PublicKey) *Script {
 	s := &Script{}
 	b := pub.Marshal()
@@ -324,6 +328,7 @@ func NewP2SHScript(pub *PublicKey) *Script {
 }
 
 //a9144733f37cf4db86fbc2efed2500b4f4e49f31202387
+//for out
 func (s Script) IsP2SH() bool {
 	return s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
 }

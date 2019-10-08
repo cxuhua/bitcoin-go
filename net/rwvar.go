@@ -114,6 +114,16 @@ func (b *MsgBuffer) Bytes() []byte {
 	return b.Payload
 }
 
+func (m *MsgBuffer) WriteHash(id HashID) {
+	m.WriteBytes(id[:])
+}
+
+func (m *MsgBuffer) ReadHash() HashID {
+	hash := HashID{}
+	m.ReadBytes(hash[:])
+	return hash
+}
+
 //read var int
 func (m *MsgBuffer) ReadVarInt() (uint64, int) {
 	b := m.ReadUint8()

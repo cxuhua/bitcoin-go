@@ -15,7 +15,7 @@ import (
 )
 
 func TestSaveTXToDat(t *testing.T) {
-	data := util.HexDecode("01000000013129282e9929a648c4f098c18b059e7a2a35e3451b3d1b5e3708fc1ab3ef966e0000000049483045022058c4285e0237dd0d78260b85fabf3616aa2ecbda6dd8e3713608ff965b190487022100a3734e247992a295c8b227db00f3403bb6b7f4a478e93f6beba5803af271022601ffffffff020795927a00000000434104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5ac40c06503000000001976a91426c0e35b30b270138a3859bf666e69b2626c8c7588ac00000000")
+	data := util.HexDecode("010000000001012abed540bf3633b2f5ba0ab000aa4fa03f306a385f6d398ff4e2102259aa084e0200000000ffffffff0200a3e1110000000017a91443b6b5404bdd3c514d6a3a500a567d365412148587f4a03d0a00000000220020701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d040047304402205224ce0fa75ec852ace15143c83206a5fc8a4e56050fea6a01712fc6e6483ed6022065aefe1c48541ca6bf8db47e73781ff968a0467d50854a31d00db53caef4b90101483045022100881d348faae0d0613853676d2a7842d1a44018625ced82de54c88030a1e3810d0220096dcbc30a58bfb645cb2337309e0cedf0da030c3600767ce41e7c8df9675adf016952210375e00eb72e29da82b89367947f29ef34afb75e8654f6ea368e0acdfd92976b7c2103a1b26313f430c4b15bb1fdce663207659d8cac749a0e53d70eff01874496feff2103c96d495bfdd5ba4145e3e046fee45e84a8a48ad05bd8dbb395c011a32cf9f88053ae00000000")
 	h := NewNetHeader(data)
 	tx := &TX{}
 	tx.Read(h)
@@ -74,17 +74,18 @@ func TestSaveTX(t *testing.T) {
 	}
 }
 
-func TestP2SHSign(t *testing.T) {
+func TestP2WPKHSign(t *testing.T) {
 	err := db.UseSession(context.Background(), func(db db.DbImp) error {
+		db.SetTXCacher(Fxs)
 		id := NewHexBHash("0ae88f93be14b77994da8ebb948e817e6fbb98d66c0091366e46df0663ea3813")
 		tx2, err := LoadTX(id, db)
 		if err != nil {
 			return err
 		}
-		return tx2.Verify(db)
+		return VerifyTX(tx2, db)
 	})
 	if err != nil {
-		t.Errorf("Verify test failed  %v", err)
+		t.Errorf("Verify test failed  err=%v", err)
 	}
 }
 
@@ -99,7 +100,7 @@ func TestP2PKSign(t *testing.T) {
 		return VerifyTX(tx2, db)
 	})
 	if err != nil {
-		t.Errorf("Verify test failed  %v", err)
+		t.Errorf("Verify test failed  err=%v", err)
 	}
 }
 
@@ -114,7 +115,7 @@ func TestP2PKHSign(t *testing.T) {
 		return VerifyTX(tx2, db)
 	})
 	if err != nil {
-		t.Errorf("Verify test failed  %v", err)
+		t.Errorf("Verify test failed  err=%v", err)
 	}
 }
 

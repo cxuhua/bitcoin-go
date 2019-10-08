@@ -83,7 +83,8 @@ func (vfy *p2pkhVerify) Packer(sig *script.SigValue) SigPacker {
 		in:  vfy.in,
 		out: vfy.out,
 		ctx: vfy.ctx,
-		ht:  sig.HashType,
+		ht:  uint32(sig.HashType),
+		typ: vfy.typ,
 	}
 }
 

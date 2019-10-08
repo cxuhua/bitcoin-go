@@ -297,9 +297,12 @@ const (
 	SCRIPT_VERIFY_CONST_SCRIPTCODE                      = uint32(1) << 16
 )
 
+func (s Script) SubBytes(b, e int) []byte {
+	return s[b:e]
+}
+
 func (s Script) SubScript(b, e int) *Script {
-	sub := s[b:e]
-	return NewScript(sub)
+	return NewScript(s.SubBytes(b, e))
 }
 
 //stack []byte

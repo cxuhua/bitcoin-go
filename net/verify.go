@@ -17,7 +17,7 @@ const (
 	TX_NONE TXType = iota
 	TX_P2PK
 	TX_P2PKH
-	TX_P2SH
+	TX_P2WPKH
 )
 
 //in input data,out=in's out
@@ -31,8 +31,8 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	if out.Script.IsP2PKH() {
 		return TX_P2PKH
 	}
-	if out.Script.IsP2SH() {
-		return TX_P2SH
+	if out.Script.IsP2SH() && in.Script.IsP2WPKH() {
+		return TX_P2WPKH
 	}
 	return TX_NONE
 }
@@ -72,6 +72,14 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 			}
 		case TX_P2PK:
 			verifyer = &p2pkVerify{
+				idx: idx,
+				in:  in,
+				out: out,
+				ctx: tx,
+				typ: typ,
+			}
+		case TX_P2WPKH:
+			verifyer = &p2wpkhVerify{
 				idx: idx,
 				in:  in,
 				out: out,
