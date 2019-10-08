@@ -674,9 +674,9 @@ func (s Script) Eval(stack *Stack, checker SigChecker) error {
 				stack.Pop()
 				stack.Pop()
 				if err != nil {
-					stack.Push(VsTrue)
-				} else {
 					stack.Push(VsFalse)
+				} else {
+					stack.Push(VsTrue)
 				}
 				if op == OP_CHECKSIGVERIFY {
 					if err == nil {

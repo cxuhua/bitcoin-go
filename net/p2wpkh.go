@@ -12,6 +12,18 @@ type p2wpkhVerify struct {
 	baseVerify
 }
 
+func newP2WPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wpkhVerify {
+	return &p2wpkhVerify{
+		baseVerify: baseVerify{
+			idx: idx,
+			in:  in,
+			out: out,
+			ctx: ctx,
+			typ: typ,
+		},
+	}
+}
+
 func (vfy *p2wpkhVerify) Packer(sig *script.SigValue) SigPacker {
 	return &witnessPacker{
 		idx: vfy.idx,
@@ -25,7 +37,7 @@ func (vfy *p2wpkhVerify) Packer(sig *script.SigValue) SigPacker {
 
 //get sigcode
 func (vfy *p2wpkhVerify) SigScript() *script.Script {
-	hash := vfy.in.Script.SubBytes(3, 23)
+	hash := (*vfy.in.Script)[3:]
 	ns := &script.Script{}
 	ns = ns.PushOp(script.OP_DUP)
 	ns = ns.PushOp(script.OP_HASH160)

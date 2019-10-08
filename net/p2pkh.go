@@ -12,6 +12,18 @@ type p2pkhVerify struct {
 	baseVerify
 }
 
+func newP2PKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2pkhVerify {
+	return &p2pkhVerify{
+		baseVerify: baseVerify{
+			idx: idx,
+			in:  in,
+			out: out,
+			ctx: ctx,
+			typ: typ,
+		},
+	}
+}
+
 func (vfy *p2pkhVerify) Packer(sig *script.SigValue) SigPacker {
 	return &baseSigPacker{
 		idx: vfy.idx,

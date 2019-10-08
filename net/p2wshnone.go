@@ -9,14 +9,29 @@ import (
 	"fmt"
 )
 
-type p2wshOnlyVerify struct {
+type p2wshNoneVerify struct {
 	hsidx int
 	less  int
 	size  int
 	baseVerify
 }
 
-func (vfy *p2wshOnlyVerify) Packer(sig *script.SigValue) SigPacker {
+func newP2WSHNoneVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wshNoneVerify {
+	return &p2wshNoneVerify{
+		hsidx: -1,
+		less:  -1,
+		size:  -1,
+		baseVerify: baseVerify{
+			idx: idx,
+			in:  in,
+			out: out,
+			ctx: ctx,
+			typ: typ,
+		},
+	}
+}
+
+func (vfy *p2wshNoneVerify) Packer(sig *script.SigValue) SigPacker {
 	return &witnessPacker{
 		idx: vfy.idx,
 		in:  vfy.in,
@@ -27,11 +42,11 @@ func (vfy *p2wshOnlyVerify) Packer(sig *script.SigValue) SigPacker {
 	}
 }
 
-func (vfy *p2wshOnlyVerify) SigScript() *script.Script {
+func (vfy *p2wshNoneVerify) SigScript() *script.Script {
 	return vfy.in.Witness.Script[vfy.hsidx]
 }
 
-func (vfy *p2wshOnlyVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
+func (vfy *p2wshNoneVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
 	sig, err := script.NewSigValue(sigv)
 	if err != nil {
 		return err
@@ -51,14 +66,14 @@ func (vfy *p2wshOnlyVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []by
 	return nil
 }
 
-func (vfy *p2wshOnlyVerify) checkPublicHash() bool {
+func (vfy *p2wshNoneVerify) checkPublicHash() bool {
 	sc := vfy.in.Witness.Script[vfy.hsidx]
 	hv1 := util.SHA256(*sc)
 	hv2 := (*vfy.out.Script)[2:]
 	return bytes.Equal(hv1, hv2)
 }
 
-func (vfy *p2wshOnlyVerify) Verify(db db.DbImp) error {
+func (vfy *p2wshNoneVerify) Verify(db db.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	vfy.hsidx = -1

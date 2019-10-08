@@ -72,7 +72,7 @@ const (
 	TX_P2PKH
 	TX_P2SH_WPKH
 	TX_P2SH_WSH
-	TX_ONLY_P2WSH
+	TX_P2WSH_NONE
 )
 
 //in input data,out=in's out
@@ -93,7 +93,7 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 		return TX_P2SH_WSH
 	}
 	if out.Script.IsP2WSH() && in.Script.Len() == 0 {
-		return TX_ONLY_P2WSH
+		return TX_P2WSH_NONE
 	}
 	return TX_NONE
 }
@@ -124,38 +124,11 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 		var verifyer Verifyer
 		switch typ {
 		case TX_P2PKH, TX_P2PK:
-			verifyer = &p2pkhVerify{
-				baseVerify: baseVerify{
-					idx: idx,
-					in:  in,
-					out: out,
-					ctx: tx,
-					typ: typ,
-				},
-			}
+			verifyer = newP2PKHVerify(idx, in, out, tx, typ)
 		case TX_P2SH_WPKH:
-			verifyer = &p2wpkhVerify{
-				baseVerify: baseVerify{
-					idx: idx,
-					in:  in,
-					out: out,
-					ctx: tx,
-					typ: typ,
-				},
-			}
-		case TX_ONLY_P2WSH:
-			verifyer = &p2wshOnlyVerify{
-				hsidx: -1,
-				less:  -1,
-				size:  -1,
-				baseVerify: baseVerify{
-					idx: idx,
-					in:  in,
-					out: out,
-					ctx: tx,
-					typ: typ,
-				},
-			}
+			verifyer = newP2WPKHVerify(idx, in, out, tx, typ)
+		case TX_P2WSH_NONE:
+			verifyer = newP2WSHNoneVerify(idx, in, out, tx, typ)
 		default:
 			return fmt.Errorf("in %d checktype not support,miss Verifyer", idx)
 		}

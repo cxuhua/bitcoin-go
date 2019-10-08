@@ -66,7 +66,7 @@ func TestSaveTX(t *testing.T) {
 	}
 }
 
-func TestP2WSHOnlySign(t *testing.T) {
+func TestP2WSHNoneSign(t *testing.T) {
 	err := db.UseSession(context.Background(), func(db db.DbImp) error {
 		db.SetTXCacher(Fxs)
 		id := NewHexBHash("2cc59f3c646b3917ed9b5224f71b335a2eab70ca4610a01dee90c2536d35d940")
