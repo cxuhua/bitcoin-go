@@ -2,12 +2,14 @@ package net
 
 import (
 	"bitcoin/db"
+	"bitcoin/script"
 	"errors"
 	"fmt"
 )
 
 type Verifyer interface {
 	Verify(db db.DbImp) error
+	Packer(sig *script.SigValue) SigPacker
 }
 
 type TXType int
