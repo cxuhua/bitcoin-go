@@ -1,14 +1,18 @@
 package net
 
 import (
+	"bitcoin/util"
+	"bytes"
+	"encoding/binary"
 	"log"
 	"testing"
-
-	"golang.org/x/crypto/ripemd160"
 )
 
 func TestHash(t *testing.T) {
-	log.Println(ripemd160.New().Sum([]byte{}))
+	r := bytes.NewBuffer(util.HexDecode("39220900"))
+	v := uint32(0)
+	binary.Read(r, ByteOrder, &v)
+	log.Println(v)
 }
 
 func TestMsgBuffer(t *testing.T) {

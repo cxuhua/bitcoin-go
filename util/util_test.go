@@ -3,18 +3,8 @@ package util
 import (
 	"bytes"
 	"encoding/hex"
-	"log"
 	"testing"
 )
-
-func TestDHash(t *testing.T) {
-	//0020
-	//a16b5755f7f6f96dbd65f5f0d6ab9418b89af4b1f14a1bb8a09062c35f0dcb54
-	d, _ := hex.DecodeString("701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d")
-
-	log.Println(BECH32Address(d))
-
-}
 
 func TestMakePublicToAddress(t *testing.T) {
 	s, err := hex.DecodeString("0450863AD64A87AE8A2FE83C1AF1A8403CB53F53E486D8511DAD8A04887E5B23522CD470243453A299FA9E77237716103ABC11A1DF38855ED6F2EE187E9C582BA6")
