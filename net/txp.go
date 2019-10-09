@@ -13,6 +13,17 @@ const (
 	MAX_MONEY = Amount(21000000 * COIN)
 )
 
+func GetCoinbaseReward(h int) Amount {
+	c := 50 * COIN
+	mh := 210000
+	x := h / mh
+	n := c
+	for i := 0; i < x; i++ {
+		n /= 2
+	}
+	return Amount(n)
+}
+
 type Amount int64
 
 func (a Amount) IsRange() bool {
