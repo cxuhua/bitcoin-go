@@ -33,21 +33,9 @@ func TestExp(t *testing.T) {
 
 func TestNewScript(t *testing.T) {
 	pub := &PublicKey{}
-	err := pub.FromHEX("04ee90bfdd4e07eb1cfe9c6342479ca26c0827f84bfe1ab39e32fc3e94a0fe00e6f7d8cd895704e974978766dd0f9fad3c97b1a0f23684e93b400cc9022b7ae532")
+	err := pub.FromHEX("4104220936c3245597b1513a9a7fe96d96facf1a840ee21432a1b73c2cf42c1810284dd730f21ded9d818b84402863a2b5cd1afe3a3d13719d524482592fb23c88a3")
 	if err != nil {
 		t.Errorf("load public key error %v", err)
-	}
-	s1 := NewP2PKHScript(pub)
-	if !s1.IsP2PKH() {
-		t.Error("NewP2PKHScript error")
-	}
-	s2 := NewP2SHScript(pub)
-	if !s2.IsP2SH() {
-		t.Error("NewP2SHScript error")
-	}
-	s3 := NewPUBKEYScript(pub)
-	if !s3.IsPUBKEY() {
-		t.Error("NewPUBKEYScript error")
 	}
 }
 

@@ -31,7 +31,7 @@ func newP2SHWSHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2shw
 }
 
 func (vfy *p2shwshVerify) Packer(sig *script.SigValue) SigPacker {
-	return &witnessPacker{
+	return &witnesSigPacker{
 		idx: vfy.idx,
 		in:  vfy.in,
 		out: vfy.out,
@@ -84,10 +84,8 @@ func (vfy *p2shwshVerify) Verify(db db.DbImp) error {
 	for i, v := range vfy.in.Witness.Script {
 		if v.Len() == 0 {
 			continue
-		} else if n1, n2 := v.IsMultiSig(); n1 > 0 && n2 > 0 {
+		} else if v.HasMultiSig() {
 			vfy.hsidx = i
-			vfy.less = n1
-			vfy.size = n2
 			sv.Concat(v)
 		} else {
 			sv.PushBytes(*v)

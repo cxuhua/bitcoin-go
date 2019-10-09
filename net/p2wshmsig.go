@@ -9,18 +9,14 @@ import (
 	"fmt"
 )
 
-type p2wshNoneVerify struct {
+type p2wshMSIGVerify struct {
 	hsidx int
-	less  int
-	size  int
 	baseVerify
 }
 
-func newP2WSHNoneVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wshNoneVerify {
-	return &p2wshNoneVerify{
+func newP2WSHMSIGVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wshMSIGVerify {
+	return &p2wshMSIGVerify{
 		hsidx: -1,
-		less:  -1,
-		size:  -1,
 		baseVerify: baseVerify{
 			idx: idx,
 			in:  in,
@@ -31,8 +27,8 @@ func newP2WSHNoneVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2w
 	}
 }
 
-func (vfy *p2wshNoneVerify) Packer(sig *script.SigValue) SigPacker {
-	return &witnessPacker{
+func (vfy *p2wshMSIGVerify) Packer(sig *script.SigValue) SigPacker {
+	return &witnesSigPacker{
 		idx: vfy.idx,
 		in:  vfy.in,
 		out: vfy.out,
@@ -42,11 +38,11 @@ func (vfy *p2wshNoneVerify) Packer(sig *script.SigValue) SigPacker {
 	}
 }
 
-func (vfy *p2wshNoneVerify) SigScript() *script.Script {
+func (vfy *p2wshMSIGVerify) SigScript() *script.Script {
 	return vfy.in.Witness.Script[vfy.hsidx]
 }
 
-func (vfy *p2wshNoneVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
+func (vfy *p2wshMSIGVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
 	sig, err := script.NewSigValue(sigv)
 	if err != nil {
 		return err
@@ -66,24 +62,22 @@ func (vfy *p2wshNoneVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []by
 	return nil
 }
 
-func (vfy *p2wshNoneVerify) checkPublicHash() bool {
+func (vfy *p2wshMSIGVerify) checkPublicHash() bool {
 	sc := vfy.in.Witness.Script[vfy.hsidx]
 	hv1 := util.SHA256(*sc)
 	hv2 := (*vfy.out.Script)[2:]
 	return bytes.Equal(hv1, hv2)
 }
 
-func (vfy *p2wshNoneVerify) Verify(db db.DbImp) error {
+func (vfy *p2wshMSIGVerify) Verify(db db.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	vfy.hsidx = -1
 	for i, v := range vfy.in.Witness.Script {
 		if v.Len() == 0 {
 			continue
-		} else if n1, n2 := v.IsMultiSig(); n1 > 0 && n2 > 0 {
+		} else if v.HasMultiSig() {
 			vfy.hsidx = i
-			vfy.less = n1
-			vfy.size = n2
 			sv.Concat(v)
 		} else {
 			sv.PushBytes(*v)

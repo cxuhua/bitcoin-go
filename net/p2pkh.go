@@ -36,7 +36,7 @@ func (vfy *p2pkhVerify) Packer(sig *script.SigValue) SigPacker {
 }
 
 func (vfy *p2pkhVerify) SigScript() *script.Script {
-	return nil
+	return vfy.out.Script
 }
 
 func (vfy *p2pkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {

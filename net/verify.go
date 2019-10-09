@@ -72,8 +72,28 @@ const (
 	TX_P2PKH
 	TX_P2SH_WPKH
 	TX_P2SH_WSH
-	TX_P2WSH_NONE
+	TX_P2WSH_MSIG
+	TX_P2SH_MSIG
 )
+
+func (i *TxIn) HasWitnessMultiSig() bool {
+	if i.Witness == nil || len(i.Witness.Script) == 0 {
+		return false
+	}
+	for _, v := range i.Witness.Script {
+		if v != nil && v.HasMultiSig() {
+			return true
+		}
+	}
+	return false
+}
+
+func (i *TxIn) HasInMultiSig() bool {
+	if i.Script == nil || i.Script.Len() == 0 {
+		return false
+	}
+	return i.Script.HasMultiSig()
+}
 
 //in input data,out=in's out
 func CheckTXType(in *TxIn, out *TxOut) TXType {
@@ -92,8 +112,11 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	if out.Script.IsP2SH() && in.Script.IsP2WSH() {
 		return TX_P2SH_WSH
 	}
-	if out.Script.IsP2WSH() && in.Script.Len() == 0 {
-		return TX_P2WSH_NONE
+	if out.Script.IsP2WSH() && in.HasWitnessMultiSig() {
+		return TX_P2WSH_MSIG
+	}
+	if out.Script.IsP2SH() && in.HasInMultiSig() {
+		return TX_P2SH_MSIG
 	}
 	return TX_NONE
 }
@@ -127,8 +150,10 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 			verifyer = newP2PKHVerify(idx, in, out, tx, typ)
 		case TX_P2SH_WPKH:
 			verifyer = newP2WPKHVerify(idx, in, out, tx, typ)
-		case TX_P2WSH_NONE:
-			verifyer = newP2WSHNoneVerify(idx, in, out, tx, typ)
+		case TX_P2WSH_MSIG:
+			verifyer = newP2WSHMSIGVerify(idx, in, out, tx, typ)
+		case TX_P2SH_MSIG:
+			verifyer = newP2SHMSIGVerify(idx, in, out, tx, typ)
 		case TX_P2SH_WSH:
 			verifyer = newP2SHWSHVerify(idx, in, out, tx, typ)
 		default:

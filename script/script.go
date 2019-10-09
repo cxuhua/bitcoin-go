@@ -723,12 +723,11 @@ func (s Script) Eval(stack *Stack, checker SigChecker) error {
 				for isig <= isig2 && ikey <= ikey2 {
 					sig := stack.Top(-isig).ToBytes()
 					pub := stack.Top(-ikey).ToBytes()
-					if err := checker.CheckSig(stack, sig, pub); err != nil {
-						ikey++
-						continue
+					err := checker.CheckSig(stack, sig, pub)
+					if err == nil {
+						iok++
+						isig++
 					}
-					iok++
-					isig++
 					ikey++
 				}
 				if iok >= sigcount {

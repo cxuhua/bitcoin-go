@@ -25,7 +25,7 @@ func newP2WPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wpkh
 }
 
 func (vfy *p2wpkhVerify) Packer(sig *script.SigValue) SigPacker {
-	return &witnessPacker{
+	return &witnesSigPacker{
 		idx: vfy.idx,
 		in:  vfy.in,
 		out: vfy.out,

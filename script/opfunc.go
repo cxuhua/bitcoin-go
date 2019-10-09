@@ -221,31 +221,33 @@ func (s Script) IsP2WSH() bool {
 }
 
 //return lessnum,pubnum
-func (s Script) IsMultiSig() (int, int) {
-	if s[0] < OP_1 || s[0] > OP_16 {
-		return 0, 0
+func (s Script) HasMultiSig() bool {
+	if s.Len() == 0 || s[s.Len()-1] != OP_CHECKMULTISIG {
+		return false
 	}
-	lnum, pnum := 0, 0
-	pc := 0
-	i := 0
-	for {
+	lnum, pnum, knum := 0, 0, 0
+	for i := 0; ; {
 		b, p, op, ops := s.GetOp(i)
 		if !b {
 			break
 		}
-		if lnum == 0 && op >= OP_1 && op <= OP_16 {
+		if op >= OP_PUSHDATA1 && op <= OP_PUSHDATA4 && NewScript(ops).HasMultiSig() {
+			return true
+		} else if lnum == 0 && op >= OP_1 && op <= OP_16 {
 			lnum = int(op-OP_1) + 1
 		} else if pnum == 0 && op >= OP_1 && op <= OP_16 {
 			pnum = int(op-OP_1) + 1
 		} else if IsCompressedOrUncompressedPubKey(ops) {
-			pc++
+			knum++
+		} else if op == OP_CHECKMULTISIG {
+			break
 		}
 		i = p
 	}
-	if pc != pnum || lnum > pnum {
-		return 0, 0
+	if knum != pnum || lnum > pnum {
+		return false
 	}
-	return lnum, pnum
+	return lnum > 0 && pnum >= 3 && lnum <= pnum
 }
 
 func (s *Script) PushInt64(v int64) *Script {

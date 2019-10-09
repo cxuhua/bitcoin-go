@@ -36,7 +36,7 @@ func (sp *baseSigPacker) Pack(imp ISigScript) ([]byte, error) {
 		w.WriteBytes(v.OutHash[:])
 		w.WriteUInt32(v.OutIndex)
 		if i == sp.idx {
-			w.WriteScript(sp.out.Script)
+			w.WriteScript(imp.SigScript())
 		} else {
 			w.WriteScript(nil)
 		}
@@ -52,7 +52,7 @@ func (sp *baseSigPacker) Pack(imp ISigScript) ([]byte, error) {
 	return w.Bytes(), nil
 }
 
-type witnessPacker struct {
+type witnesSigPacker struct {
 	idx int    //current ints index
 	in  *TxIn  //current in
 	out *TxOut //in's out
@@ -61,7 +61,7 @@ type witnessPacker struct {
 	typ TXType //tx type
 }
 
-func (sp *witnessPacker) getOutputsHash() HashID {
+func (sp *witnesSigPacker) getOutputsHash() HashID {
 	hash := HashID{}
 	m := NewMsgWriter()
 	for _, v := range sp.ctx.Outs {
@@ -72,7 +72,7 @@ func (sp *witnessPacker) getOutputsHash() HashID {
 	return hash
 }
 
-func (sp *witnessPacker) getPrevoutHash() HashID {
+func (sp *witnesSigPacker) getPrevoutHash() HashID {
 	hash := HashID{}
 	m := NewMsgWriter()
 	for _, v := range sp.ctx.Ins {
@@ -83,7 +83,7 @@ func (sp *witnessPacker) getPrevoutHash() HashID {
 	return hash
 }
 
-func (sp *witnessPacker) getSequenceHash() HashID {
+func (sp *witnesSigPacker) getSequenceHash() HashID {
 	hash := HashID{}
 	m := NewMsgWriter()
 	for _, v := range sp.ctx.Ins {
@@ -93,7 +93,7 @@ func (sp *witnessPacker) getSequenceHash() HashID {
 	return hash
 }
 
-func (sp *witnessPacker) Pack(imp ISigScript) ([]byte, error) {
+func (sp *witnesSigPacker) Pack(imp ISigScript) ([]byte, error) {
 	m := NewMsgWriter()
 	m.WriteInt32(sp.ctx.Ver)
 	m.WriteHash(sp.getPrevoutHash())
