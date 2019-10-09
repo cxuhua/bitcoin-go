@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bytes"
 	"encoding/hex"
 	"log"
 	"testing"
@@ -24,6 +25,13 @@ func TestMakePublicToAddress(t *testing.T) {
 	if addr != "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM" {
 		t.Error("MakeAddress error")
 	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
+	}
 }
 
 func TestMakePKHAddress(t *testing.T) {
@@ -34,6 +42,16 @@ func TestMakePKHAddress(t *testing.T) {
 	addr := P2PKHAddress(s)
 	if addr != "1GNREsqR6D3Sfo2CVScS1SDFBuzLJGs8WQ" {
 		t.Error("MakeAddress error")
+	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
+	}
+	if !bytes.Equal(h, s) {
+		t.Errorf("not equal public hash160")
 	}
 }
 
@@ -46,15 +64,29 @@ func TestLongAddress(t *testing.T) {
 	if addr != "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" {
 		t.Errorf("TestLongAddress error %s", addr)
 	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
+	}
 }
 func TestBECH32Address(t *testing.T) {
-	s, err := hex.DecodeString("0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798")
+	s, err := hex.DecodeString("751e76e8199196d454941c45d1b3a323f1433bd6")
 	if err != nil {
 		panic(err)
 	}
 	addr := BECH32Address(s)
 	if addr != "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" {
 		t.Errorf("TestAddress error %s", addr)
+	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
 	}
 }
 
@@ -63,5 +95,12 @@ func TestP2SHAddress(t *testing.T) {
 	addr := P2SHAddress(data)
 	if addr != "3Ae2TYfyHvwH11pUy6HaK7rBYn9GfGZ3Fk" {
 		t.Errorf("P2SHAddress error %s", addr)
+	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 5 || len(h) != 20 {
+		t.Errorf("return error")
 	}
 }

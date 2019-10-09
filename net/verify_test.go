@@ -6,6 +6,22 @@ import (
 	"testing"
 )
 
+//8d5bc6ff636d9cfb3a3b37cc2ad7681e5ba8078d8c7eb4a47531d75c18c8487f
+func TestP2WPKHSign(t *testing.T) {
+	err := db.UseSession(context.Background(), func(db db.DbImp) error {
+		db.SetTXCacher(Fxs)
+		id := NewHexBHash("8d5bc6ff636d9cfb3a3b37cc2ad7681e5ba8078d8c7eb4a47531d75c18c8487f")
+		tx2, err := LoadTX(id, db)
+		if err != nil {
+			return err
+		}
+		return VerifyTX(tx2, db)
+	})
+	if err != nil {
+		t.Errorf("Verify test failed  err=%v", err)
+	}
+}
+
 func TestP2SHMSIGSign(t *testing.T) {
 	err := db.UseSession(context.Background(), func(db db.DbImp) error {
 		db.SetTXCacher(Fxs)
@@ -36,7 +52,7 @@ func TestP2WSHMSIGSign(t *testing.T) {
 	}
 }
 
-func TestP2WPKHSign(t *testing.T) {
+func TestP2SHWPKHSign(t *testing.T) {
 	err := db.UseSession(context.Background(), func(db db.DbImp) error {
 		db.SetTXCacher(Fxs)
 		id := NewHexBHash("0ae88f93be14b77994da8ebb948e817e6fbb98d66c0091366e46df0663ea3813")
