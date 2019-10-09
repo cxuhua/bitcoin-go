@@ -215,9 +215,9 @@ func (s Script) IsP2SH() bool {
 	return s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
 }
 
-//for out
+//for out/in
 func (s Script) IsP2WSH() bool {
-	return s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20
+	return (s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20) || (s.Len() == 35 && s[0] == 34 && s[1] == OP_0 && s[2] == 0x20)
 }
 
 //return lessnum,pubnum

@@ -8,12 +8,18 @@ import (
 	"fmt"
 )
 
-type p2wpkhVerify struct {
+type p2shwshVerify struct {
+	hsidx int
+	less  int
+	size  int
 	baseVerify
 }
 
-func newP2WPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wpkhVerify {
-	return &p2wpkhVerify{
+func newP2SHWSHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2shwshVerify {
+	return &p2shwshVerify{
+		hsidx: -1,
+		less:  -1,
+		size:  -1,
 		baseVerify: baseVerify{
 			idx: idx,
 			in:  in,
@@ -24,7 +30,7 @@ func newP2WPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wpkh
 	}
 }
 
-func (vfy *p2wpkhVerify) Packer(sig *script.SigValue) SigPacker {
+func (vfy *p2shwshVerify) Packer(sig *script.SigValue) SigPacker {
 	return &witnessPacker{
 		idx: vfy.idx,
 		in:  vfy.in,
@@ -35,22 +41,11 @@ func (vfy *p2wpkhVerify) Packer(sig *script.SigValue) SigPacker {
 	}
 }
 
-//get sigcode
-func (vfy *p2wpkhVerify) SigScript() *script.Script {
-	hash := (*vfy.in.Script)[3:]
-	ns := &script.Script{}
-	ns = ns.PushOp(script.OP_DUP)
-	ns = ns.PushOp(script.OP_HASH160)
-	ns = ns.PushBytes(hash)
-	ns = ns.PushOp(script.OP_EQUALVERIFY)
-	ns = ns.PushOp(script.OP_CHECKSIG)
-	return ns
+func (vfy *p2shwshVerify) SigScript() *script.Script {
+	return vfy.in.Witness.Script[vfy.hsidx]
 }
 
-//-1 pubkey
-//-2 sigvalue
-//-3 hash equal
-func (vfy *p2wpkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
+func (vfy *p2shwshVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
 	sig, err := script.NewSigValue(sigv)
 	if err != nil {
 		return err
@@ -70,12 +65,12 @@ func (vfy *p2wpkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte)
 	return nil
 }
 
-func (vfy *p2wpkhVerify) Verify(db db.DbImp) error {
+func (vfy *p2shwshVerify) Verify(db db.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
-	//concat hash equal script
-	sv = sv.Concat(vfy.in.Script)
-	sv = sv.Concat(vfy.out.Script)
+	//hash equal check
+	sv.Concat(vfy.in.Script)
+	sv.Concat(vfy.out.Script)
 	if err := sv.Eval(stack, vfy); err != nil {
 		return err
 	}
@@ -84,13 +79,20 @@ func (vfy *p2wpkhVerify) Verify(db db.DbImp) error {
 	}
 	stack.Pop()
 	sv.Clean()
-	//push sig pub data
-	for _, v := range vfy.in.Witness.Script {
-		sv = sv.PushBytes(*v)
+	//multisig check
+	vfy.hsidx = -1
+	for i, v := range vfy.in.Witness.Script {
+		if v.Len() == 0 {
+			continue
+		} else if n1, n2 := v.IsMultiSig(); n1 > 0 && n2 > 0 {
+			vfy.hsidx = i
+			vfy.less = n1
+			vfy.size = n2
+			sv.Concat(v)
+		} else {
+			sv.PushBytes(*v)
+		}
 	}
-	//add sig check op code
-	sv = sv.PushOp(script.OP_CHECKSIG)
-	//run script checksig
 	if err := sv.Eval(stack, vfy); err != nil {
 		return err
 	}

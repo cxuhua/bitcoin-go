@@ -129,6 +129,8 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 			verifyer = newP2WPKHVerify(idx, in, out, tx, typ)
 		case TX_P2WSH_NONE:
 			verifyer = newP2WSHNoneVerify(idx, in, out, tx, typ)
+		case TX_P2SH_WSH:
+			verifyer = newP2SHWSHVerify(idx, in, out, tx, typ)
 		default:
 			return fmt.Errorf("in %d checktype not support,miss Verifyer", idx)
 		}
