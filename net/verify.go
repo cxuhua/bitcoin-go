@@ -67,18 +67,43 @@ type TXType int
 
 //tx type
 const (
-	TX_NONE TXType = iota
+	TX_NONSTANDARD TXType = iota
 	TX_P2PK
 	TX_P2PKH
 	TX_P2SH_WPKH
 	TX_P2SH_WSH
-	TX_P2WSH_NONE
+	TX_P2WSH_MSIG
+	TX_P2SH_MSIG
+	TX_P2WPKH
 )
+
+func (i *TxIn) OnlyHasWitness() bool {
+	return len(*i.Script) == 0 && i.Witness != nil && len(i.Witness.Script) > 0
+}
+
+func (i *TxIn) HasWitnessMultiSig() bool {
+	if i.Witness == nil || len(i.Witness.Script) == 0 {
+		return false
+	}
+	for _, v := range i.Witness.Script {
+		if v != nil && v.HasMultiSig() {
+			return true
+		}
+	}
+	return false
+}
+
+func (i *TxIn) HasInMultiSig() bool {
+	if i.Script == nil || i.Script.Len() == 0 {
+		return false
+	}
+	return i.Script.HasMultiSig()
+}
 
 //in input data,out=in's out
 func CheckTXType(in *TxIn, out *TxOut) TXType {
 	if in == nil || out == nil || out.Script == nil {
-		return TX_NONE
+		return TX_NONSTANDARD
 	}
 	if out.Script.IsP2PK() {
 		return TX_P2PK
@@ -86,16 +111,22 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	if out.Script.IsP2PKH() {
 		return TX_P2PKH
 	}
+	if out.Script.IsP2WPKH() && in.OnlyHasWitness() {
+		return TX_P2WPKH
+	}
 	if out.Script.IsP2SH() && in.Script.IsP2WPKH() {
 		return TX_P2SH_WPKH
 	}
 	if out.Script.IsP2SH() && in.Script.IsP2WSH() {
 		return TX_P2SH_WSH
 	}
-	if out.Script.IsP2WSH() && in.Script.Len() == 0 {
-		return TX_P2WSH_NONE
+	if out.Script.IsP2WSH() && in.HasWitnessMultiSig() {
+		return TX_P2WSH_MSIG
 	}
-	return TX_NONE
+	if out.Script.IsP2SH() && in.HasInMultiSig() {
+		return TX_P2SH_MSIG
+	}
+	return TX_NONSTANDARD
 }
 
 func VerifyTX(tx *TX, db db.DbImp) error {
@@ -118,17 +149,21 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 		}
 		out := ptx.Outs[in.OutIndex]
 		typ := CheckTXType(in, out)
-		if typ == TX_NONE {
+		if typ == TX_NONSTANDARD {
 			return fmt.Errorf("in %d checktype not support", idx)
 		}
 		var verifyer Verifyer
 		switch typ {
 		case TX_P2PKH, TX_P2PK:
 			verifyer = newP2PKHVerify(idx, in, out, tx, typ)
-		case TX_P2SH_WPKH:
+		case TX_P2WPKH:
 			verifyer = newP2WPKHVerify(idx, in, out, tx, typ)
-		case TX_P2WSH_NONE:
-			verifyer = newP2WSHNoneVerify(idx, in, out, tx, typ)
+		case TX_P2SH_WPKH:
+			verifyer = newP2SHWPKHVerify(idx, in, out, tx, typ)
+		case TX_P2WSH_MSIG:
+			verifyer = newP2WSHMSIGVerify(idx, in, out, tx, typ)
+		case TX_P2SH_MSIG:
+			verifyer = newP2SHMSIGVerify(idx, in, out, tx, typ)
 		case TX_P2SH_WSH:
 			verifyer = newP2SHWSHVerify(idx, in, out, tx, typ)
 		default:

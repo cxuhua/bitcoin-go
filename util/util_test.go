@@ -1,19 +1,10 @@
 package util
 
 import (
+	"bytes"
 	"encoding/hex"
-	"log"
 	"testing"
 )
-
-func TestDHash(t *testing.T) {
-	//0020
-	//a16b5755f7f6f96dbd65f5f0d6ab9418b89af4b1f14a1bb8a09062c35f0dcb54
-	d, _ := hex.DecodeString("701a8d401c84fb13e6baf169d59684e17abd9fa216c8cc5b9fc63d622ff8c58d")
-
-	log.Println(BECH32Address(d))
-
-}
 
 func TestMakePublicToAddress(t *testing.T) {
 	s, err := hex.DecodeString("0450863AD64A87AE8A2FE83C1AF1A8403CB53F53E486D8511DAD8A04887E5B23522CD470243453A299FA9E77237716103ABC11A1DF38855ED6F2EE187E9C582BA6")
@@ -23,6 +14,13 @@ func TestMakePublicToAddress(t *testing.T) {
 	addr := P2PKHAddress(s)
 	if addr != "16UwLL9Risc3QfPqBUvKofHmBQ7wMtjvM" {
 		t.Error("MakeAddress error")
+	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
 	}
 }
 
@@ -35,6 +33,16 @@ func TestMakePKHAddress(t *testing.T) {
 	if addr != "1GNREsqR6D3Sfo2CVScS1SDFBuzLJGs8WQ" {
 		t.Error("MakeAddress error")
 	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
+	}
+	if !bytes.Equal(h, s) {
+		t.Errorf("not equal public hash160")
+	}
 }
 
 func TestLongAddress(t *testing.T) {
@@ -46,15 +54,29 @@ func TestLongAddress(t *testing.T) {
 	if addr != "1A1zP1eP5QGefi2DMPTfTL5SLmv7DivfNa" {
 		t.Errorf("TestLongAddress error %s", addr)
 	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
+	}
 }
 func TestBECH32Address(t *testing.T) {
-	s, err := hex.DecodeString("0279BE667EF9DCBBAC55A06295CE870B07029BFCDB2DCE28D959F2815B16F81798")
+	s, err := hex.DecodeString("751e76e8199196d454941c45d1b3a323f1433bd6")
 	if err != nil {
 		panic(err)
 	}
 	addr := BECH32Address(s)
 	if addr != "bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4" {
 		t.Errorf("TestAddress error %s", addr)
+	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 0 || len(h) != 20 {
+		t.Errorf("return error")
 	}
 }
 
@@ -63,5 +85,12 @@ func TestP2SHAddress(t *testing.T) {
 	addr := P2SHAddress(data)
 	if addr != "3Ae2TYfyHvwH11pUy6HaK7rBYn9GfGZ3Fk" {
 		t.Errorf("P2SHAddress error %s", addr)
+	}
+	v, h, err := DecodeAddr(addr)
+	if err != nil {
+		t.Errorf("deocde addr error %v", err)
+	}
+	if v != 5 || len(h) != 20 {
+		t.Errorf("return error")
 	}
 }

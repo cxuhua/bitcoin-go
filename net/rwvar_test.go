@@ -1,14 +1,45 @@
 package net
 
 import (
+	"bitcoin/util"
+	"bytes"
+	"encoding/binary"
 	"log"
 	"testing"
-
-	"golang.org/x/crypto/ripemd160"
 )
 
 func TestHash(t *testing.T) {
-	log.Println(ripemd160.New().Sum([]byte{}))
+	r := bytes.NewBuffer(util.HexDecode("39220900"))
+	v := uint32(0)
+	binary.Read(r, ByteOrder, &v)
+	log.Println(v)
+}
+
+func TestCoinbaseReward(t *testing.T) {
+	ch := 210000 * 3
+	if GetCoinbaseReward(ch) != Amount(6.25*float64(COIN)) {
+		t.Errorf("error")
+	}
+	ch = 210000*3 - 1
+	if GetCoinbaseReward(ch) != Amount(12.5*float64(COIN)) {
+		t.Errorf("error")
+	}
+	ch = 210000 * 2
+	if GetCoinbaseReward(ch) != Amount(12.5*float64(COIN)) {
+		t.Errorf("error")
+	}
+	ch = 210000*2 - 1
+	if GetCoinbaseReward(ch) != 25*COIN {
+		t.Errorf("error")
+	}
+	ch = 210000
+	if GetCoinbaseReward(ch) != Amount(25*float64(COIN)) {
+		t.Errorf("error")
+	}
+	ch = 210000 - 1
+	if GetCoinbaseReward(ch) != Amount(50*float64(COIN)) {
+		t.Errorf("error")
+	}
 }
 
 func TestMsgBuffer(t *testing.T) {

@@ -190,18 +190,13 @@ func payToPubKeyScript(serializedPubKey []byte) ([]byte, error) {
 
 */
 
-//2103c9f4836b9a4f77fc0d81f7bcb01b7f1b35916864b9476c241ce9fc198bd25432ac
-//or
-//4104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5ac
-//for out
 func (s Script) IsP2PK() bool {
 	return (s.Len() == 35 && s[0] == 0x21 && s[34] == OP_CHECKSIG) || (s.Len() == 67 && s[0] == 0x41 && s[66] == OP_CHECKSIG)
 }
 
-//1600146bdeebc5218e565401db3e1c4510eebd2570cc07
-//for in
+//out || in
 func (s Script) IsP2WPKH() bool {
-	return s.Len() == 23 && s[0] == 0x16 && s[1] == 0 && s[2] == byte(s.Len()-3)
+	return (s.Len() == 22 && s[0] == OP_0 && s[1] == byte(s.Len()-2)) || (s.Len() == 23 && s[0] == 0x16 && s[1] == OP_0 && s[2] == byte(s.Len()-3))
 }
 
 //for out
@@ -209,43 +204,43 @@ func (s Script) IsP2PKH() bool {
 	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
 }
 
-//a9144733f37cf4db86fbc2efed2500b4f4e49f31202387
-//for out
 func (s Script) IsP2SH() bool {
 	return s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
 }
 
-//for out/in
+//out || in
 func (s Script) IsP2WSH() bool {
 	return (s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20) || (s.Len() == 35 && s[0] == 34 && s[1] == OP_0 && s[2] == 0x20)
 }
 
 //return lessnum,pubnum
-func (s Script) IsMultiSig() (int, int) {
-	if s[0] < OP_1 || s[0] > OP_16 {
-		return 0, 0
+func (s Script) HasMultiSig() bool {
+	if s.Len() == 0 || s[s.Len()-1] != OP_CHECKMULTISIG {
+		return false
 	}
-	lnum, pnum := 0, 0
-	pc := 0
-	i := 0
-	for {
+	lnum, pnum, knum := 0, 0, 0
+	for i := 0; ; {
 		b, p, op, ops := s.GetOp(i)
 		if !b {
 			break
 		}
-		if lnum == 0 && op >= OP_1 && op <= OP_16 {
+		if op >= OP_PUSHDATA1 && op <= OP_PUSHDATA4 && NewScript(ops).HasMultiSig() {
+			return true
+		} else if lnum == 0 && op >= OP_1 && op <= OP_16 {
 			lnum = int(op-OP_1) + 1
 		} else if pnum == 0 && op >= OP_1 && op <= OP_16 {
 			pnum = int(op-OP_1) + 1
 		} else if IsCompressedOrUncompressedPubKey(ops) {
-			pc++
+			knum++
+		} else if op == OP_CHECKMULTISIG {
+			break
 		}
 		i = p
 	}
-	if pc != pnum || lnum > pnum {
-		return 0, 0
+	if knum != pnum || lnum > pnum {
+		return false
 	}
-	return lnum, pnum
+	return lnum > 0 && pnum >= 3 && lnum <= pnum
 }
 
 func (s *Script) PushInt64(v int64) *Script {

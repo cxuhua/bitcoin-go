@@ -2,11 +2,11 @@ package net
 
 import (
 	"bitcoin/db"
+	"bitcoin/script"
 	"bitcoin/util"
 	"bytes"
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -15,7 +15,7 @@ import (
 )
 
 func TestSaveTXToDat(t *testing.T) {
-	data := util.HexDecode("01000000000102fe3dc9208094f3ffd12645477b3dc56f60ec4fa8e6f5d67c565d1c6b9216b36e000000004847304402200af4e47c9b9629dbecc21f73af989bdaa911f7e6f6c2e9394588a3aa68f81e9902204f3fcf6ade7e5abb1295b6774c8e0abd94ae62217367096bc02ee5e435b67da201ffffffff0815cf020f013ed6cf91d29f4202e8a58726b1ac6c79da47c23d1bee0a6925f80000000000ffffffff0100f2052a010000001976a914a30741f8145e5acadf23f751864167f32e0963f788ac000347304402200de66acf4527789bfda55fc5459e214fa6083f936b430a762c629656216805ac0220396f550692cd347171cbc1ef1f51e15282e837bb2b30860dc77c8f78bc8501e503473044022027dc95ad6b740fe5129e7e62a75dd00f291a2aeb1200b84b09d9e3789406b6c002201a9ecd315dd6a0e632ab20bbb98948bc0c6fb204f2c286963bb48517a7058e27034721026dccc749adc2a9d0d89497ac511f760f45c47dc5ed9cf352a58ac706453880aeadab210255a9626aebf5e29c0e6538428ba0d1dcf6ca98ffdf086aa8ced5e0d0215ea465ac00000000")
+	data := util.HexDecode("0200000001c5cc15a54bbb6e963d21153fe9320ccef11a1405de54a2bb0a6ef1b08ae015a5010000006a473044022074e0e8a1c4c1dd70f55ebea3ef2472727839168143afb2cfe7d6494ecda4a9ef022048492f3865b6572c97d88aa334e19c6a0947a11c794706fc34a63968d8c76e93012103addffda7b0dc0856fcf248ab830c61e66d24b368393811fe58f955f0aa32e8b6fdffffff02e803000000000000160014751e76e8199196d454941c45d1b3a323f1433bd6004b0000000000001976a9145f2c746007a3171893ea09a21e0d4f4307be2e1a88acc6090900")
 	h := NewNetHeader(data)
 	tx := &TX{}
 	tx.Read(h)
@@ -28,7 +28,7 @@ func TestSaveTXToDat(t *testing.T) {
 }
 
 func TestInfo(t *testing.T) {
-	data2 := util.HexDecode("01000000000102fe3dc9208094f3ffd12645477b3dc56f60ec4fa8e6f5d67c565d1c6b9216b36e000000004847304402200af4e47c9b9629dbecc21f73af989bdaa911f7e6f6c2e9394588a3aa68f81e9902204f3fcf6ade7e5abb1295b6774c8e0abd94ae62217367096bc02ee5e435b67da201ffffffff0815cf020f013ed6cf91d29f4202e8a58726b1ac6c79da47c23d1bee0a6925f80000000000ffffffff0100f2052a010000001976a914a30741f8145e5acadf23f751864167f32e0963f788ac000347304402200de66acf4527789bfda55fc5459e214fa6083f936b430a762c629656216805ac0220396f550692cd347171cbc1ef1f51e15282e837bb2b30860dc77c8f78bc8501e503473044022027dc95ad6b740fe5129e7e62a75dd00f291a2aeb1200b84b09d9e3789406b6c002201a9ecd315dd6a0e632ab20bbb98948bc0c6fb204f2c286963bb48517a7058e27034721026dccc749adc2a9d0d89497ac511f760f45c47dc5ed9cf352a58ac706453880aeadab210255a9626aebf5e29c0e6538428ba0d1dcf6ca98ffdf086aa8ced5e0d0215ea465ac00000000")
+	data2 := util.HexDecode("020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff4e0338220904129f9d5d535a30322f4254432e434f4d2ffabe6d6db782a41cbf92a6bca1f0b0e98bee0d8fabc2b7ff8e5a91b3815b7f054abe54e2080000007296cd1092eba16aef5e010000000000ffffffff0321d18d4a0000000016001497cfc76442fe717f2a3f0cc9c175f7561b6619970000000000000000266a24aa21a9ed995e3f01e0ad89d8add62981129645ca5518da2d8a6e507d06b900cbf3b61acc0000000000000000266a24b9e11b6de0b00267354a66a640f4f5322efd45e50eef89cd32a3298fb10f6c58dbd267670120000000000000000000000000000000000000000000000000000000000000000000000000")
 	h2 := NewNetHeader(data2)
 	tx2 := &TX{}
 	tx2.Read(h2)
@@ -66,79 +66,10 @@ func TestSaveTX(t *testing.T) {
 	}
 }
 
-func TestP2SHWSHSign(t *testing.T) {
-	err := db.UseSession(context.Background(), func(db db.DbImp) error {
-		db.SetTXCacher(Fxs)
-		id := NewHexBHash("f72a891a632fc1ae43cbbf9f15417d753dded9cee4f871885d1a3347251c937c")
-		tx2, err := LoadTX(id, db)
-		if err != nil {
-			return err
-		}
-		return VerifyTX(tx2, db)
-	})
-	if err != nil {
-		t.Errorf("Verify test failed  err=%v", err)
-	}
-}
-
-func TestP2WSHNoneSign(t *testing.T) {
-	err := db.UseSession(context.Background(), func(db db.DbImp) error {
-		db.SetTXCacher(Fxs)
-		id := NewHexBHash("2cc59f3c646b3917ed9b5224f71b335a2eab70ca4610a01dee90c2536d35d940")
-		tx2, err := LoadTX(id, db)
-		if err != nil {
-			return err
-		}
-		return VerifyTX(tx2, db)
-	})
-	if err != nil {
-		t.Errorf("Verify test failed  err=%v", err)
-	}
-}
-
-func TestP2WPKHSign(t *testing.T) {
-	err := db.UseSession(context.Background(), func(db db.DbImp) error {
-		db.SetTXCacher(Fxs)
-		id := NewHexBHash("0ae88f93be14b77994da8ebb948e817e6fbb98d66c0091366e46df0663ea3813")
-		tx2, err := LoadTX(id, db)
-		if err != nil {
-			return err
-		}
-		return VerifyTX(tx2, db)
-	})
-	if err != nil {
-		t.Errorf("Verify test failed  err=%v", err)
-	}
-}
-
-func TestP2PKSign(t *testing.T) {
-	err := db.UseSession(context.Background(), func(db db.DbImp) error {
-		db.SetTXCacher(Fxs)
-		id := NewHexBHash("80d417567b5a032465474052cca4dc38c57f6d5dc10dc7519b2ca20ac7d5512b")
-		tx2, err := LoadTX(id, db)
-		if err != nil {
-			return err
-		}
-		return VerifyTX(tx2, db)
-	})
-	if err != nil {
-		t.Errorf("Verify test failed  err=%v", err)
-	}
-}
-
-func TestP2PKHSign(t *testing.T) {
-	err := db.UseSession(context.Background(), func(db db.DbImp) error {
-		db.SetTXCacher(Fxs)
-		id := NewHexBHash("78470577b25f58e0b18fd21e57eb64c10eb66272a856208440362103de0f31da")
-		tx2, err := LoadTX(id, db)
-		if err != nil {
-			return err
-		}
-		return VerifyTX(tx2, db)
-	})
-	if err != nil {
-		t.Errorf("Verify test failed  err=%v", err)
-	}
+func TestPSHScript(t *testing.T) {
+	d := util.HexDecode("00483045022100c121721a09160127ee2f6073e83c84d709ae8ebe6810f3893cb158f0635c8a0a02204fb2cb9d5ee693cf3df44660d3de63152396641fbb48c15be891c4289e06c0c201473044022037a2b5d78ecde26a72b2bc95056d82c2ea56ae55d692768c42e80f5f9d56bde7022079dc481aa4ba7e11644e9579eadd46e63f1af04a8e19be214dc7bfcafcb09a3301473044022008906911805539eabe566ea9b0b2de6aefb1993ef9bf671d4dd3e2357a15c5a5022025ce9c2409dfd198a6ef8b7015be3c6eae1b2b5726acfa737d8aef0fbe9420d5014d0b01534104220936c3245597b1513a9a7fe96d96facf1a840ee21432a1b73c2cf42c1810284dd730f21ded9d818b84402863a2b5cd1afe3a3d13719d524482592fb23c88a3410472225d3abc8665cf01f703a270ee65be5421c6a495ce34830061eb0690ec27dfd1194e27b6b0b659418d9f91baec18923078aac18dc19699aae82583561fefe54104a24db5c0e8ed34da1fd3b6f9f797244981b928a8750c8f11f9252041daad7b2d95309074fed791af77dc85abdd8bb2774ed8d53379d28cd49f251b9c08cab7fc4104dd26300a280a4c64bb42608d8cebe0d76705eda9f598a7a9945845f080f34788e6711ed7d786d3cc714aee44201d69a770f1caaf1558b8076398cbb0fc48241a54ae")
+	s := script.NewScript(d)
+	log.Println(s.HasMultiSig())
 }
 
 func TestCoinBaseTX(t *testing.T) {
@@ -237,68 +168,6 @@ func TestTXWithWitness(t *testing.T) {
 	}
 }
 
-//0595dcce885d55287483900d91dee54cd85f9325bfd053c948801c32f3e3edee
-func TestGetOutput(t *testing.T) {
-	s1 := "010000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff5f03661c0904236d905d2f706f6f6c696e2e636f6d2ffabe6d6dfb14f40eab377f96913454bd1560dd9bed05d1343bc47e048648376d82029fc20100000000000000ccc3a91362229b793b2b18a48ad829190ed9bdf9f100aed13a00ffffffffffffffff035755dd4b0000000017a914b111f00eed1a8123dd0a1fed50b0793229ed47e7870000000000000000266a24b9e11b6ded607dba8ae11c44120a5aa1e209b1e95dbb35ef75d6f99f45ca7ecc0e4c6f230000000000000000266a24aa21a9ed8a7fa35398c81d6bafcfcf5013d96fe3c3b8b90efe8785709971529ee0588cb10120000000000000000000000000000000000000000000000000000000000000000000001e89"
-	data, err := hex.DecodeString(s1)
-	if err != nil {
-		panic(err)
-	}
-	h1 := NewNetHeader(data)
-	tx1 := &TX{}
-	tx1.Read(h1)
-	idx := tx1.Ins[0].OutIndex
-	//log.Println(tx1.Ins[0].OutHash, idx)
-	script1 := tx1.Ins[0].Script
-	log.Println(hex.EncodeToString(*script1))
-
-	//ins[0] output tx
-	s2 := "0100000002227bf9487f0716e9bcf81d42343b9d31435f8cf24fbcc766ebb4b7cf7213d9aa01000000db0048304502201c719cb0c5030845ae4fcaf880ba8c9d9bc33a4048d4bc61f6c8768d34722235022100e97231f5fc703ffe22a1c3e375639804a452ccf0fcff8b153e12da66e82d79980148304502206dc0723ef31a7a24b130ccae2e0385dac01d30fec30ea99e70e280502213ef30022100aee1330040fb75b91ec58a8bf2d8191a195f610f5823c46411a4c34f03e4c938014752210293baf0397588acc1aba056e868fd188dc0eea7554b45370aae862f9d2493a4c121020ab7517cf22a46b503ee8dcae7f9f109ec4cd19f0ab9d77c89c607554f3d5aa952aeffffffff3040c42258489d633033906125dc9999a8b0fadebde325db13c7fa6a0126f1b3580000006a473044022022f21d6bbd933ff799586e482f91e682007eb4ed4d6f9d4cb3b3e9e1a82b3340022073f50be36c0a37541cabd84c3defb43c9a6e2cc0dfe3757d40ac4aeef3c02e2701210203635e5c184951e14fcfecc83b15960594f4fceec729e09a4a517b0a03a7f4b9ffffffff0260216000000000001976a914e46841d71f89d9a1b97dfe086bcd92615cda5ae688aca75cc4220000000017a914622854939d571b63df97f47e8302b700ab2932b68700000000"
-	data, err = hex.DecodeString(s2)
-	if err != nil {
-		panic(err)
-	}
-	h2 := NewNetHeader(data)
-	tx2 := &TX{}
-	tx2.Read(h2)
-	//log.Println(tx2.HashID())
-	script2 := tx2.Outs[idx].Script
-	log.Println(hex.EncodeToString(*script2))
-}
-
-func TestH1B(t *testing.T) {
-	data, err := ioutil.ReadFile("h1b.dat")
-	if err != nil {
-		panic(err)
-	}
-	h := NewNetHeader(data)
-	m := NewMsgBlock()
-	m.Read(h)
-}
-func TestBlockFromDB(t *testing.T) {
-	blockId := NewHexBHash("0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff")
-	err := db.UseSession(context.Background(), func(db db.DbImp) error {
-		m, err := LoadBlock(blockId, db)
-		if err != nil {
-			return err
-		}
-		if !m.Hash.Equal(blockId) {
-			return errors.New("block hashid error")
-		}
-		err = m.LoadTXS(db)
-		if err != nil {
-			return err
-		}
-		if !m.Merkle.Equal(m.MarkleId()) {
-			return errors.New("equal markle error")
-		}
-		return nil
-	})
-	if err != nil {
-		t.Errorf("save error %v", err)
-	}
-}
-
 func TestBlockData(t *testing.T) {
 	blockId := NewHexBHash("0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff")
 
@@ -315,10 +184,4 @@ func TestBlockData(t *testing.T) {
 	if !m.Merkle.Equal(m.MarkleId()) {
 		t.Errorf("equal markle error")
 	}
-	//err = db.UseSession(context.Background(), func(db db.DbImp) error {
-	//	return m.LoadTXS(db)
-	//})
-	//if err != nil {
-	//	t.Errorf("save error %v", err)
-	//}
 }
