@@ -1,6 +1,7 @@
 package util
 
 import (
+	"bitcoin/config"
 	"bytes"
 	"crypto/rand"
 	"encoding/binary"
@@ -62,10 +63,11 @@ func P2SHAddress(pk []byte) string {
 
 //return ver prefix and public hash160
 func DecodeAddr(a string) (byte, []byte, error) {
+	conf := config.GetConfig()
 	if len(a) < 10 {
 		return 0, nil, errors.New("a length error")
 	}
-	if a[:2] == "bc" {
+	if a[:2] == conf.Bech32HRP {
 		b, err := SegWitAddressDecode(a)
 		if err != nil {
 			return 0, nil, err
@@ -103,6 +105,7 @@ func P2PKHAddress(pk []byte) string {
 
 //bc
 func BECH32Address(pk []byte) string {
+	conf := config.GetConfig()
 	ver := byte(0)
 	pl := byte(len(pk))
 	var a []byte = nil
@@ -113,7 +116,7 @@ func BECH32Address(pk []byte) string {
 	}
 	b := []byte{ver, pl}
 	b = append(b, a...)
-	addr, err := SegWitAddressEncode("bc", b)
+	addr, err := SegWitAddressEncode(conf.Bech32HRP, b)
 	if err != nil {
 		panic(err)
 	}

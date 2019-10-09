@@ -28,6 +28,10 @@ type Config struct {
 	SegwitHeight uint
 
 	b58prefixs map[int][]byte
+	//210000
+	SubHalving int
+	//bech32 address prefix
+	Bech32HRP string
 }
 
 func (c Config) Base58Prefix(idx int) []byte {
@@ -87,6 +91,8 @@ func GetConfig() *Config {
 	c.b58prefixs[EXT_PUBLIC_KEY] = []byte{0x04, 0x88, 0xB2, 0x1E}
 	c.b58prefixs[EXT_SECRET_KEY] = []byte{0x04, 0x88, 0xAD, 0xE4}
 	//
+	c.SubHalving = 210000
+	c.Bech32HRP = "bc"
 	config = c
 	return config
 }

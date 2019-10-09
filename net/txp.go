@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bitcoin/config"
 	"bitcoin/db"
 	"bitcoin/script"
 	"bytes"
@@ -14,14 +15,14 @@ const (
 )
 
 func GetCoinbaseReward(h int) Amount {
-	c := 50 * COIN
-	mh := 210000
-	x := h / mh
-	n := c
-	for i := 0; i < x; i++ {
-		n /= 2
+	conf := config.GetConfig()
+	halvings := h / conf.SubHalving
+	if halvings >= 64 {
+		return 0
 	}
-	return Amount(n)
+	n := 50 * COIN
+	n >>= halvings
+	return n
 }
 
 type Amount int64
