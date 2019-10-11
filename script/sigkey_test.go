@@ -147,10 +147,6 @@ func TestTX_P2SH_MULTISIGAddresst(t *testing.T) {
 }
 
 func TestBase58Key(t *testing.T) {
-	mpk, _ := DecodePrivateKey(mine)
-	pub := mpk.PublicKey()
-	v1, v2, err := GetPublicAddress(TX_P2SH_WPKH_V0, []*PublicKey{pub})
-	log.Println(v1, v2, err)
 
 	pk1, err := DecodePrivateKey(strSecret1)
 	if err != nil {

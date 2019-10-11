@@ -93,7 +93,7 @@ func (i *TxIn) HasWitnessMultiSig() bool {
 	return false
 }
 
-func (i *TxIn) HasInMultiSig() bool {
+func (i *TxIn) HasScriptMultiSig() bool {
 	if i.Script == nil || i.Script.Len() == 0 {
 		return false
 	}
@@ -123,7 +123,7 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	if out.Script.IsP2WSH() && in.HasWitnessMultiSig() {
 		return TX_P2WSH_MSIG
 	}
-	if out.Script.IsP2SH() && in.HasInMultiSig() {
+	if out.Script.IsP2SH() && in.HasScriptMultiSig() {
 		return TX_P2SH_MSIG
 	}
 	return TX_NONSTANDARD

@@ -224,7 +224,7 @@ func (s Script) HasMultiSig() bool {
 		if !b {
 			break
 		}
-		if op >= OP_PUSHDATA1 && op <= OP_PUSHDATA4 && NewScript(ops).HasMultiSig() {
+		if op >= OP_PUSHDATA1 && op <= OP_PUSHDATA4 && Script(ops).HasMultiSig() {
 			return true
 		} else if lnum == 0 && op >= OP_1 && op <= OP_16 {
 			lnum = int(op-OP_1) + 1
@@ -269,6 +269,10 @@ func (s *Script) Concat(v *Script) *Script {
 	return s
 }
 
+var (
+	border = binary.LittleEndian
+)
+
 func (s *Script) PushBytes(b []byte) *Script {
 	l := len(b)
 	if l < OP_PUSHDATA1 {
@@ -279,12 +283,12 @@ func (s *Script) PushBytes(b []byte) *Script {
 	} else if l <= 0xffff {
 		s.PushOp(OP_PUSHDATA2)
 		b2 := []byte{0, 0}
-		binary.LittleEndian.PutUint16(b2, uint16(l))
+		border.PutUint16(b2, uint16(l))
 		*s = append(*s, b2...)
 	} else {
 		s.PushOp(OP_PUSHDATA4)
 		b4 := []byte{0, 0, 0, 0}
-		binary.LittleEndian.PutUint32(b4, uint32(l))
+		border.PutUint32(b4, uint32(l))
 		*s = append(*s, b4...)
 	}
 	*s = append(*s, b...)
@@ -320,13 +324,13 @@ func (s *Script) GetOp(b int) (bool, int, byte, []byte) {
 		if e-b < 2 {
 			return false, b, op, ret
 		}
-		size = uint(binary.LittleEndian.Uint16((*s)[b:]))
+		size = uint(border.Uint16((*s)[b:]))
 		b += 2
 	} else if op == OP_PUSHDATA4 {
 		if e-b < 4 {
 			return false, b, op, ret
 		}
-		size = uint(binary.LittleEndian.Uint32((*s)[b:]))
+		size = uint(border.Uint32((*s)[b:]))
 		b += 4
 	}
 	if e-b < 0 || uint(e-b) < size {

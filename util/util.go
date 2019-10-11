@@ -104,12 +104,17 @@ func P2PKHAddress(pk []byte) string {
 }
 
 //bc
+
 func BECH32Address(pk []byte) string {
 	conf := config.GetConfig()
 	ver := byte(0)
 	pl := byte(len(pk))
 	var a []byte = nil
 	if len(pk) == 20 {
+		//P2WPKH
+		a = pk
+	} else if len(pk) == 32 {
+		//P2WSH
 		a = pk
 	} else {
 		a = HASH160(pk)

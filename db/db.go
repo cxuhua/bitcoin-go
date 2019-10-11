@@ -9,8 +9,8 @@ import (
 )
 
 var (
-	client     *mongo.Client = nil
-	dbinitonce               = sync.Once{}
+	client *mongo.Client = nil
+	dbonce               = sync.Once{}
 )
 
 type mongoDBImp struct {
@@ -53,7 +53,7 @@ func NewDBImp(ctx context.Context) DbImp {
 }
 
 func InitDB(ctx context.Context) *mongo.Client {
-	dbinitonce.Do(func() {
+	dbonce.Do(func() {
 		c := options.Client().ApplyURI("mongodb://127.0.0.1:27017/")
 		cptr, err := mongo.NewClient(c)
 		if err != nil {

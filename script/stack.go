@@ -99,9 +99,9 @@ func (stack *Stack) Top(idx int) Value {
 	}
 	return e.Value.(Value)
 }
+
 func (stack *Stack) EraseIndex(idx int) {
 	stack.EraseRange(idx, idx)
-
 }
 
 func (stack *Stack) EraseRange(from int, to int) {

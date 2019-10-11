@@ -2,9 +2,52 @@ package util
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
+	"log"
+	"math/big"
 	"testing"
 )
+
+//扫描标签获取相关数据，填写上次记录hash，生成签名后提交到地址
+//服务器获取数据，校验cmac，校验用户签名，填入none和time后生成签名，数据返回给用户，用户再次校验服务器签名，计算hash，连接到自己的记录上
+//还需要校验计数器必须大于上一次记录的计数器
+//数据广播到其他节点，节点验证签名后记录
+
+// y^2 = x^3 -3x + b
+// y = sqrt(x^3 -3x + b)
+func TestP256PublicCompress(t *testing.T) {
+	c := elliptic.P256().Params()
+	pri, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Errorf("make privake error %v", err)
+	}
+	log.Println("key = ", hex.EncodeToString(pri.D.Bytes()))
+	log.Println("x=", hex.EncodeToString(pri.X.Bytes()))
+	log.Println("y=", hex.EncodeToString(pri.Y.Bytes()))
+
+	d := pri.Y.Bit(0)
+	x := pri.X
+	var y, x3b, x3 big.Int
+	x3.SetInt64(3)
+	x3.Mul(&x3, x)
+	x3b.Mul(x, x)
+	x3b.Mul(&x3b, x)
+	x3b.Add(&x3b, c.B)
+	x3b.Sub(&x3b, &x3)
+	x3b.Mod(&x3b, c.P)
+	y.ModSqrt(&x3b, c.P)
+	if y.Bit(0) != d {
+		y.Sub(c.P, &y)
+	}
+	if y.Cmp(pri.Y) != 0 {
+		t.Errorf("failed")
+	}
+	log.Println("cy=", hex.EncodeToString(y.Bytes()), "ybit=", d)
+}
 
 func TestMakePublicToAddress(t *testing.T) {
 	s, err := hex.DecodeString("0450863AD64A87AE8A2FE83C1AF1A8403CB53F53E486D8511DAD8A04887E5B23522CD470243453A299FA9E77237716103ABC11A1DF38855ED6F2EE187E9C582BA6")
