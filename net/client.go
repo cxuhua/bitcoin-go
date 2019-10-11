@@ -9,26 +9,40 @@ import (
 	"time"
 )
 
+type ClientType byte
+
 const (
-	ClientTypeIn  = 0x1
-	ClientTypeOut = 0x2
+	ClientTypeIn  = ClientType(0x1)
+	ClientTypeOut = ClientType(0x2)
 )
+
+type ClientListener struct {
+	OnConnected func()
+	OnClosed    func()
+	OnLoop      func()
+	OnMessage   func(m MsgIO)
+}
 
 type Client struct {
 	net.Conn
 	ctx       context.Context
 	cancel    context.CancelFunc
-	Type      int
+	Type      ClientType
 	wc        chan MsgIO
 	rc        chan *NetHeader
 	IP        net.IP
 	Port      uint16
 	connected bool
 	try       int
-	ptimer    *time.Timer
 	Acked     bool //is recv verack
 	VerInfo   *MsgVersion
-	ping      int
+	listener  *ClientListener
+}
+
+//sync running
+func (c *Client) Sync(lis *ClientListener) {
+	c.listener = lis
+	c.run()
 }
 
 func (c *Client) WriteMsg(m MsgIO) {
@@ -39,79 +53,76 @@ func (c *Client) processMsg(m *NetHeader) error {
 	if c.Acked {
 		m.Ver = c.VerInfo.Ver
 	}
-	log.Println("CMD=", m.Command, "Size=", m.Len())
+	var msg MsgIO = nil
 	switch m.Command {
 	case NMT_VERSION:
-		msg := &MsgVersion{}
-		m.Full(msg)
-		c.VerInfo = msg
+		mp := &MsgVersion{}
+		msg = m.Full(mp)
+		c.VerInfo = mp
 	case NMT_VERACK:
 		c.WriteMsg(NewMsgVerAck())
-		c.WriteMsg(NewMsgPing())
 		c.Acked = true
 		c.OnReady()
 	case NMT_PING:
 		c.WriteMsg(NewMsgPong())
 	case NMT_HEADERS:
 		mp := NewMsgHeaders()
-		m.Full(mp)
+		msg = m.Full(mp)
 	case NMT_PONG:
-		pong := NewMsgPong()
-		m.Full(pong)
-		c.ping = pong.Ping()
-		c.OnPing()
+		mp := NewMsgPong()
+		msg = m.Full(mp)
+		c.OnPong(mp)
 	case NMT_SENDHEADERS:
 		mp := NewMsgSendHeaders()
-		m.Full(mp)
+		msg = m.Full(mp)
 	case NMT_SENDCMPCT:
 		mp := NewMsgSendCmpct()
-		m.Full(mp)
+		msg = m.Full(mp)
 	case NMT_GETHEADERS:
 		mp := NewMsgGetHeaders()
-		m.Full(mp)
+		msg = m.Full(mp)
 	case NMT_FEEFILTER:
 		mp := NewMsgFeeFilter()
-		m.Full(mp)
-		log.Println("feerate = ", mp.FeeRate)
+		msg = m.Full(mp)
 	case NMT_INV:
 		mp := NewMsgINV()
-		m.Full(mp)
-		//if len(mp.Invs) > 0 {
-		//	log.Println(hex.EncodeToString(mp.Invs[0].Hash[:]))
-		//}
+		msg = m.Full(mp)
 	case NMT_NOTFOUND:
 		mp := NewMsgNotFound()
-		m.Full(mp)
-		log.Println("NMT_NOTFOUND", mp)
+		msg = m.Full(mp)
 	case NMT_TX:
 		mp := NewMsgTX()
-		m.Full(mp)
+		msg = m.Full(mp)
 	case NMT_BLOCK:
 		mp := NewMsgBlock()
-		m.Full(mp)
+		msg = m.Full(mp)
 	case NMT_ADDR:
 		am := NewMsgAddr()
-		m.Full(am)
+		msg = m.Full(am)
 	case NMT_REJECT:
 		mp := NewMsgReject()
-		m.Full(mp)
-		log.Println("NMT_REJECT", mp.Message, mp.Reason)
+		msg = m.Full(mp)
 	default:
 		log.Println(m.Command, " not process")
+	}
+	if msg != nil && c.listener != nil && c.listener.OnMessage != nil {
+		c.listener.OnMessage(msg)
 	}
 	return nil
 }
 
 func (c *Client) OnReady() {
-	c.WriteMsg(NewMsgGetAddr())
+
 }
 
-func (c *Client) OnPing() {
+func (c *Client) OnPong(msg *MsgPong) {
 
 }
 
 func (c *Client) OnClosed() {
-
+	if c.listener != nil && c.listener.OnClosed != nil {
+		c.listener.OnClosed()
+	}
 }
 
 func (c *Client) IsConnected() bool {
@@ -127,6 +138,18 @@ func (c *Client) OnConnected() {
 		addr := c.Conn.LocalAddr()
 		c.WriteMsg(NewMsgVersion(addr.String(), c.GetAddr()))
 	}
+	if c.listener != nil && c.listener.OnConnected != nil {
+		c.listener.OnConnected()
+	}
+}
+
+func (c *Client) SetTry(v int) *Client {
+	c.try = v
+	return c
+}
+
+func (c *Client) OnError(err interface{}) {
+
 }
 
 func (c *Client) stop() {
@@ -137,7 +160,7 @@ func (c *Client) stop() {
 		err = fmt.Errorf("err = %v , ctx err = %v", err, c.ctx.Err())
 	}
 	if err != nil {
-		log.Println("client run finished error = ", err)
+		c.OnError(err)
 	}
 	if c.connected {
 		c.Close()
@@ -147,28 +170,38 @@ func (c *Client) stop() {
 }
 
 func (c *Client) run() {
-	//defer c.stop()
+	defer c.stop()
 	for !c.connected {
 		err := c.Connect()
 		if err != nil {
-			log.Println("connect error", err)
-			time.Sleep(time.Second * 3)
 			c.try--
-			return
+			if c.try > 0 {
+				time.Sleep(time.Second)
+				continue
+			}
 		}
-		if c.try <= 0 && !c.connected {
-			log.Println("try connect failed,try == 0")
+		if !c.connected {
 			c.cancel()
 			return
 		}
 		c.OnConnected()
 	}
 	go func() {
+		defer func() {
+			err := recover()
+			if err == nil {
+				err = c.ctx.Err()
+			} else {
+				err = fmt.Errorf("err = %v , ctx err = %v", err, c.ctx.Err())
+			}
+			if err != nil {
+				c.OnError(err)
+			}
+			c.cancel()
+		}()
 		for {
 			m, err := ReadMsg(c)
 			if err != nil {
-				log.Println("read message error", err)
-				c.cancel()
 				break
 			}
 			c.rc <- m
@@ -176,34 +209,46 @@ func (c *Client) run() {
 	}()
 	//not recv ack timeout
 	vertimer := time.NewTimer(time.Second * 5)
+	//loop timer
+	looptimer := time.NewTimer(time.Second)
+	//
+	ptimer := time.NewTimer(time.Second * 60)
 	for {
 		select {
 		case wp := <-c.wc:
 			err := WriteMsg(c, wp)
 			if err != nil {
-				log.Println("write msg error", err)
 				c.cancel()
 			}
 		case rp := <-c.rc:
 			err := c.processMsg(rp)
 			if err != nil {
-				log.Println("process msg error", err)
 				c.cancel()
 			}
 		case <-vertimer.C:
 			if !c.Acked {
 				c.cancel()
 			}
-		case <-c.ptimer.C:
+		case <-looptimer.C:
+			c.OnLoop()
+			looptimer.Reset(time.Second)
+		case <-ptimer.C:
 			if !c.Acked {
 				break
 			}
-			c.WriteMsg(NewMsgPing())
-			c.ptimer.Reset(time.Second * 60)
+			if c.IsConnected() && c.Type == ClientTypeOut {
+				c.WriteMsg(NewMsgPing())
+			}
+			ptimer.Reset(time.Second * 60)
 		case <-c.ctx.Done():
-			log.Println("done! close socket")
 			return
 		}
+	}
+}
+
+func (c *Client) OnLoop() {
+	if c.listener != nil && c.listener.OnLoop != nil {
+		c.listener.OnLoop()
 	}
 }
 
@@ -226,7 +271,7 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-func NewClient(typ int, addr string) *Client {
+func NewClient(typ ClientType, addr string) *Client {
 	ip, port := util.ParseAddr(addr)
 	c := &Client{}
 	c.connected = false
@@ -236,7 +281,6 @@ func NewClient(typ int, addr string) *Client {
 	c.wc = make(chan MsgIO, 10)
 	c.rc = make(chan *NetHeader, 10)
 	c.try = 3
-	c.ptimer = time.NewTimer(time.Second * 60)
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	return c
 }

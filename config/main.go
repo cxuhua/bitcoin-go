@@ -14,6 +14,12 @@ const (
 )
 
 type Config struct {
+	//default port
+	ListenPort int
+	//max connected me client
+	MaxInConn int
+	//max connect to count
+	MaxOutConn int
 	//network id
 	Id string
 	//dns seed names
@@ -66,6 +72,12 @@ func GetConfig() *Config {
 	}
 
 	c := &Config{Id: "main"}
+
+	c.ListenPort = 8333
+
+	c.MaxInConn = 50
+
+	c.MaxOutConn = 10
 
 	c.b58prefixs = map[int][]byte{}
 	c.MsgStart = []byte{0xF9, 0xBE, 0xB4, 0xD9}

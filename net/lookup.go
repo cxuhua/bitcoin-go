@@ -3,6 +3,7 @@ package net
 import (
 	"bitcoin/config"
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -13,6 +14,13 @@ type SeedItem struct {
 	Ip        net.IP
 	Ping      int
 	Connected bool
+	Available bool
+	Ignore    bool
+	Ver       *MsgVersion
+}
+
+func (si *SeedItem) IsNeedCheck() bool {
+	return !si.Available && !si.Ignore
 }
 
 type SeedMap struct {
@@ -20,11 +28,12 @@ type SeedMap struct {
 	mutex sync.Mutex
 }
 
-func (s *SeedMap) SetConnected(ip string, pv bool) {
+func (s *SeedMap) SetConnected(ip string, pv bool, ver *MsgVersion) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	if v, b := s.nodes[ip]; b {
 		v.Connected = pv
+		v.Ver = ver
 	}
 }
 
@@ -64,7 +73,6 @@ var (
 //run lookup
 func runlookup(conf *config.Config) {
 	for _, v := range conf.Seeds {
-		log.Println("LOOKUP ", v)
 		ips, err := net.LookupIP(v)
 		if err != nil {
 			log.Println("lookup ip error ", v, err)
@@ -73,21 +81,57 @@ func runlookup(conf *config.Config) {
 		for _, v := range ips {
 			nodes.Add(v.String())
 		}
-	}
-	for _, v := range nodes.nodes {
-		log.Println("NODE = ", v.Ip)
+		log.Println("LOOKUP", v, "Count=", len(ips))
 	}
 }
 
 func runcheckip(conf *config.Config) {
+	num := 0
+	idx := 0
 	for _, v := range nodes.nodes {
-		c, err := net.DialTimeout("tcp4", v.Ip.String()+":8333", time.Second)
-		if err != nil {
-			log.Println("connect", v.Ip, err)
+		if !v.IsNeedCheck() {
 			continue
 		}
-		c.Close()
-		log.Println(v.Ip)
+		num++
+	}
+	for _, v := range nodes.nodes {
+		if !v.IsNeedCheck() {
+			continue
+		}
+		idx++
+		addr := fmt.Sprintf("%s:%d", v.Ip, conf.ListenPort)
+		log.Println(idx, "/", num, "Check network", addr)
+		timeout := 10
+		c := NewClient(ClientTypeOut, addr)
+		c.SetTry(1)
+		c.Sync(&ClientListener{
+			OnConnected: func() {
+
+			},
+			OnClosed: func() {
+				//log.Println("Closed")
+			},
+			OnMessage: func(msg MsgIO) {
+				cmd := msg.Command()
+				if cmd == NMT_VERSION {
+					v.Ver = msg.(*MsgVersion)
+					v.Available = true
+					c.Close()
+				}
+			},
+			OnLoop: func() {
+				timeout--
+				if timeout <= 0 {
+					v.Ignore = true
+					c.Close()
+				}
+			},
+		})
+	}
+	for _, v := range nodes.nodes {
+		if v.Available {
+			log.Println(v, " available")
+		}
 	}
 }
 

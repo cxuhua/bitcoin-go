@@ -178,8 +178,9 @@ func WriteMsg(w io.Writer, m MsgIO) error {
 	return nil
 }
 
-func (h *NetHeader) Full(mp MsgIO) {
+func (h *NetHeader) Full(mp MsgIO) MsgIO {
 	mp.Read(h)
+	return mp
 }
 
 //read package
