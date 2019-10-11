@@ -100,7 +100,7 @@ func runcheckip(conf *config.Config) {
 		}
 		idx++
 		addr := fmt.Sprintf("%s:%d", v.Ip, conf.ListenPort)
-		log.Println(idx, "/", num, "Check network", addr)
+
 		timeout := 10
 		c := NewClient(ClientTypeOut, addr)
 		c.SetTry(1)
@@ -117,6 +117,7 @@ func runcheckip(conf *config.Config) {
 					v.Ver = msg.(*MsgVersion)
 					v.Available = true
 					c.Close()
+					log.Println(idx, "/", num, "Check network OK", addr, "VER=", v.Ver.Ver)
 				}
 			},
 			OnLoop: func() {
