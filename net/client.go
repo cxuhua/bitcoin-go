@@ -157,6 +157,10 @@ func (c *Client) processMsg(m *NetHeader) {
 	case NMT_REJECT:
 		mp := NewMsgReject()
 		msg = m.Full(mp)
+	case NMT_ALERT:
+		mp := NewMsgAlert()
+		msg = m.Full(mp)
+		log.Println(mp)
 	default:
 		log.Println(m.Command, " not process", c.IP)
 		return
@@ -173,6 +177,11 @@ func (c *Client) OnPong(msg *MsgPong) {
 }
 
 func (c *Client) OnClosed() {
+	if c.Type == ClientTypeOut {
+		OutIps.Del(c)
+	} else if c.Type == ClientTypeIn {
+		InIps.Del(c)
+	}
 	c.listener.OnClosed()
 }
 
@@ -186,9 +195,12 @@ func (c *Client) GetAddr() string {
 
 func (c *Client) OnConnected() {
 	if c.Type == ClientTypeOut {
+		OutIps.Set(c)
 		addr := c.Conn.LocalAddr()
 		mp := NewMsgVersion(addr.String(), c.GetAddr())
 		c.WriteMsg(mp)
+	} else if c.Type == ClientTypeIn {
+		InIps.Set(c)
 	}
 	c.listener.OnConnected()
 }
@@ -204,17 +216,11 @@ func (c *Client) OnError(err interface{}) {
 }
 
 func (c *Client) Key() string {
-	return fmt.Sprintf("%s:%d", c.IP, c.Port)
+	return net.JoinHostPort(c.IP.String(), fmt.Sprintf("%d", c.Port))
 }
 
 func (c *Client) stop() {
-	err := recover()
-	if err == nil {
-		err = c.ctx.Err()
-	} else {
-		err = fmt.Errorf("err = %v , ctx err = %v", err, c.ctx.Err())
-	}
-	if err != nil {
+	if err := recover(); err != nil {
 		c.OnError(err)
 	}
 	if c.connected {
@@ -228,7 +234,7 @@ func (c *Client) stop() {
 
 func (c *Client) run() {
 	defer c.stop()
-	for !c.connected {
+	for c.Type == ClientTypeOut && !c.connected {
 		err := c.Connect()
 		if err != nil {
 			c.try--
@@ -238,6 +244,7 @@ func (c *Client) run() {
 			}
 		}
 		if !c.connected {
+			c.OnError(fmt.Errorf("connect error %v", err))
 			c.cancel()
 			return
 		}
@@ -245,13 +252,7 @@ func (c *Client) run() {
 	}
 	go func() {
 		defer func() {
-			err := recover()
-			if err == nil {
-				err = c.ctx.Err()
-			} else {
-				err = fmt.Errorf("err = %v , ctx err = %v", err, c.ctx.Err())
-			}
-			if err != nil {
+			if err := recover(); err != nil {
 				c.OnError(err)
 			}
 			c.cancel()
@@ -259,15 +260,15 @@ func (c *Client) run() {
 		for {
 			m, err := ReadMsg(c)
 			if err != nil {
-				break
+				panic(fmt.Errorf("read msg error %v", err))
 			}
 			c.rc <- m
 		}
 	}()
 	//not recv ack timeout
-	vertimer := time.NewTimer(time.Second * 5)
+	vtimer := time.NewTimer(time.Second * 5)
 	//loop timer
-	looptimer := time.NewTimer(time.Second)
+	ltimer := time.NewTimer(time.Second)
 	//
 	ptimer := time.NewTimer(time.Second * 60)
 	for {
@@ -275,19 +276,18 @@ func (c *Client) run() {
 		case wp := <-c.wc:
 			err := WriteMsg(c, wp)
 			if err != nil {
-				c.cancel()
-			} else {
-				c.listener.OnWrite(wp)
+				panic(fmt.Errorf("write msg error %v", err))
 			}
+			c.listener.OnWrite(wp)
 		case rp := <-c.rc:
 			c.processMsg(rp)
-		case <-vertimer.C:
+		case <-vtimer.C:
 			if !c.Acked {
 				c.cancel()
 			}
-		case <-looptimer.C:
+		case <-ltimer.C:
 			c.OnLoop()
-			looptimer.Reset(time.Second)
+			ltimer.Reset(time.Second)
 		case <-ptimer.C:
 			if !c.Acked {
 				break
@@ -307,6 +307,7 @@ func (c *Client) OnLoop() {
 }
 
 func (c *Client) Stop() {
+	c.Err = fmt.Errorf("client stop,will close")
 	c.cancel()
 }
 
@@ -315,8 +316,7 @@ func (c *Client) Run() {
 }
 
 func (c *Client) Connect() error {
-	addr := fmt.Sprintf("%s:%d", c.IP, c.Port)
-	conn, err := net.DialTimeout("tcp", addr, time.Second*5)
+	conn, err := net.DialTimeout("tcp", c.Key(), time.Second*10)
 	if err != nil {
 		return err
 	}

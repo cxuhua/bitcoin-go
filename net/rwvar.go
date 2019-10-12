@@ -277,6 +277,15 @@ func (m *MsgBuffer) ReadInt32() int32 {
 	return v
 }
 
+func (m *MsgBuffer) ReadInt64() int64 {
+	v := int64(0)
+	err := binary.Read(m, ByteOrder, &v)
+	if err != nil {
+		panic(err)
+	}
+	return v
+}
+
 func (m *MsgBuffer) WriteInt32(v int32) {
 	err := binary.Write(m, ByteOrder, v)
 	if err != nil {

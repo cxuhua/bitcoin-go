@@ -18,7 +18,7 @@ func runlookup(conf *config.Config) {
 	for _, v := range conf.Seeds {
 		ips, err := net.LookupIP(v)
 		if err != nil {
-			log.Println("lookup ip error ", v, err)
+			log.Println("LOOKUP ip error ", v, err)
 			continue
 		}
 		for _, v := range ips {
@@ -47,7 +47,7 @@ func StartLookUp(ctx context.Context) {
 			case <-ltimer.C:
 				ltimer.Reset(time.Minute * 10)
 			case <-ctx.Done():
-				log.Println("looup stop", ctx.Err())
+				log.Println("LOOKUP stop", ctx.Err())
 				return
 			}
 		}

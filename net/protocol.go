@@ -34,6 +34,7 @@ const (
 	NMT_FILTERADD   = "filteradd"
 	NMT_FILTERCLEAR = "filterclear"
 	NMT_REJECT      = "reject"
+	NMT_ALERT       = "alert"
 	NMT_SENDHEADERS = "sendheaders"
 	NMT_FEEFILTER   = "feefilter"
 	NMT_SENDCMPCT   = "sendcmpct"
@@ -413,6 +414,57 @@ func (m *MsgPing) Write(h *NetHeader) {
 
 func NewMsgPing() *MsgPing {
 	return &MsgPing{Timestamp: uint64(time.Now().UnixNano())}
+}
+
+//
+type MsgAlert struct {
+	Ver        int32
+	Relay      int64
+	Expiration int64
+	ID         int32
+	Cancels    []int32
+	MinVer     int32
+	MaxVer     int32
+	SubVers    []string
+	Priority   int32
+	Comment    string
+	StatusBar  string
+	Reserved   string
+}
+
+func (m *MsgAlert) Command() string {
+	return NMT_ALERT
+}
+
+func (m *MsgAlert) Read(h *NetHeader) {
+	m.Ver = h.ReadInt32()
+	m.Relay = h.ReadInt64()
+	m.Expiration = h.ReadInt64()
+	m.ID = h.ReadInt32()
+	cl, _ := h.ReadVarInt()
+	m.Cancels = make([]int32, cl)
+	for i, _ := range m.Cancels {
+		m.Cancels[i] = h.ReadInt32()
+	}
+	m.MinVer = h.ReadInt32()
+	m.MaxVer = h.ReadInt32()
+	sl, _ := h.ReadVarInt()
+	m.SubVers = make([]string, sl)
+	for i, _ := range m.SubVers {
+		m.SubVers[i] = h.ReadString()
+	}
+	m.Priority = h.ReadInt32()
+	m.Comment = h.ReadString()
+	m.StatusBar = h.ReadString()
+	m.Reserved = h.ReadString()
+}
+
+func (m *MsgAlert) Write(h *NetHeader) {
+	//no payload
+}
+
+func NewMsgAlert() *MsgAlert {
+	return &MsgAlert{}
 }
 
 //

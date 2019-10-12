@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bitcoin/db"
 	"context"
 	"log"
 	"sync"
@@ -8,26 +9,27 @@ import (
 )
 
 func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
-	mfx := func() {
+	defer wg.Done()
+	mfx := func(db db.DbImp) error {
 		log.Println("start worker unit", i)
 		defer func() {
 			if err := recover(); err != nil {
 				log.Println("[worker error]:", err)
 			}
 		}()
-		//conf := config.GetConfig()
 		for {
 			select {
 			case <-ctx.Done():
 				log.Println("stop worker unit", i, ctx.Err())
-				wg.Done()
-				return
+				return ctx.Err()
 			}
 		}
 	}
 	for ctx.Err() != context.Canceled {
 		time.Sleep(time.Second * 3)
-		mfx()
+		db.UseSession(ctx, func(db db.DbImp) error {
+			return mfx(db)
+		})
 	}
 }
 
