@@ -5,12 +5,39 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
-	"encoding/binary"
 	"encoding/hex"
 	"log"
 	"math/big"
 	"testing"
+	"time"
+
+	"github.com/spaolacci/murmur3"
 )
+
+func TestGoChan(t *testing.T) {
+	c := make(chan int, 100)
+	for i := 0; i < 10; i++ {
+		go func(idx int) {
+			for {
+				select {
+				case x := <-c:
+					log.Println(idx, " -> ", x, len(c), cap(c))
+					time.Sleep(time.Second)
+				}
+			}
+		}(i)
+	}
+	for j := 0; ; j++ {
+		c <- j
+		time.Sleep(time.Millisecond * 50)
+	}
+}
+
+func TestBloomFilter(t *testing.T) {
+	seed := uint64(0xFBA4C795 + 5)
+	m := murmur3.Sum32WithSeed([]byte{0}, uint32(seed))
+	log.Println(m)
+}
 
 //扫描标签获取相关数据，填写上次记录hash，生成签名后提交到地址
 //服务器获取数据，校验cmac，校验用户签名，填入none和time后生成签名，数据返回给用户，用户再次校验服务器签名，计算hash，连接到自己的记录上

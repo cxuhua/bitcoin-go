@@ -6,17 +6,26 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"sort"
 	"sync"
 	"time"
 )
 
+var (
+	MWG = sync.WaitGroup{}
+)
+
 type SeedItem struct {
 	Ip        net.IP
-	Ping      int
 	Connected bool
 	Available bool
 	Ignore    bool
 	Ver       *MsgVersion
+	Client    *Client
+}
+
+func (si SeedItem) String() string {
+	return si.Ip.String() + fmt.Sprintf(" A=%v I=%v C=%v", si.Available, si.Ignore, si.Connected)
 }
 
 func (si *SeedItem) IsNeedCheck() bool {
@@ -26,7 +35,7 @@ func (si *SeedItem) IsNeedCheck() bool {
 	if si.Ignore {
 		return false
 	}
-	if !si.Available {
+	if si.Available {
 		return false
 	}
 	return true
@@ -37,20 +46,25 @@ type SeedMap struct {
 	mutex sync.Mutex
 }
 
-func (s *SeedMap) SetConnected(ip string, pv bool, ver *MsgVersion) {
+func (s *SeedMap) SetConnected(ip net.IP, c *Client) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	if v, b := s.nodes[ip]; b {
-		v.Connected = pv
-		v.Ver = ver
+	if v, b := s.nodes[ip.String()]; b {
+		if c != nil {
+			v.Connected = true
+		} else {
+			v.Connected = false
+		}
+		v.Client = c
 	}
 }
 
-func (s *SeedMap) SetPing(ip string, pv int) {
+func (s *SeedMap) SetAvailable(ip net.IP, pv bool, ver *MsgVersion) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	if v, b := s.nodes[ip]; b {
-		v.Ping = pv
+	if v, b := s.nodes[ip.String()]; b {
+		v.Available = pv
+		v.Ver = ver
 	}
 }
 
@@ -62,15 +76,14 @@ func (s *SeedMap) Add(ip string) {
 	}
 	s.nodes[ip] = &SeedItem{
 		Ip:        net.ParseIP(ip),
-		Ping:      0,
 		Connected: false,
 	}
 }
 
-func (s *SeedMap) Remove(ip string) {
+func (s *SeedMap) Remove(ip net.IP) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	delete(s.nodes, ip)
+	delete(s.nodes, ip.String())
 }
 
 var (
@@ -92,61 +105,92 @@ func runlookup(conf *config.Config) {
 		}
 		log.Println("LOOKUP", v, "Count=", len(ips))
 	}
+	log.Println("CHECK all seed host")
+	runcheckip(conf)
+	ds := []*SeedItem{}
+	for _, v := range nodes.nodes {
+		if v.Available {
+			ds = append(ds, v)
+		}
+	}
+	//save available host
+	nodes = &SeedMap{
+		nodes: map[string]*SeedItem{},
+	}
+	for _, v := range ds {
+		nodes.nodes[v.Ip.String()] = v
+	}
+	for _, v := range ds {
+		IpChan <- v
+	}
+	log.Println(len(nodes.nodes), "seed host available")
 }
 
 func runcheckip(conf *config.Config) {
-	num := 0
-	idx := 0
+	wg := sync.WaitGroup{}
 	for _, v := range nodes.nodes {
 		if !v.IsNeedCheck() {
 			continue
 		}
-		num++
-	}
-	for _, v := range nodes.nodes {
-		if !v.IsNeedCheck() {
-			continue
-		}
-		idx++
-		addr := fmt.Sprintf("%s:%d", v.Ip, conf.ListenPort)
-
 		timeout := 10
-		c := NewClient(ClientTypeOut, addr)
+		c := NewClientWithIP(ClientTypeOut, v.Ip)
 		c.SetTry(1)
-		c.Sync(&ClientListener{
-			OnConnected: func() {
-
-			},
+		wg.Add(1)
+		go c.Sync(&ClientListener{
 			OnClosed: func() {
-				//log.Println("Closed")
+				wg.Done()
 			},
 			OnMessage: func(msg MsgIO) {
 				cmd := msg.Command()
 				if cmd == NMT_VERSION {
-					v.Ver = msg.(*MsgVersion)
-					v.Available = true
-					c.Close()
-					log.Println(idx, "/", num, "Check network OK", addr, "VER=", v.Ver.Ver)
+					nodes.SetAvailable(c.IP, true, msg.(*MsgVersion))
+					c.Stop()
 				}
 			},
 			OnLoop: func() {
 				timeout--
 				if timeout <= 0 {
 					v.Ignore = true
-					c.Close()
+					c.Stop()
 				}
 			},
 		})
 	}
+	wg.Wait()
+}
+
+func checkconnping(conf *config.Config) {
+	nodes.mutex.Lock()
+	ds := []*SeedItem{}
 	for _, v := range nodes.nodes {
-		if v.Available {
-			log.Println(v, " available")
+		if !v.Connected {
+			continue
+		}
+		if v.Client.Ping > 0 {
+			ds = append(ds, v)
 		}
 	}
+	nodes.mutex.Unlock()
+	if len(ds) <= conf.MaxOutConn {
+		return
+	}
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].Client.Ping < ds[j].Client.Ping
+	})
+	//keep conf.MaxOutConn conn
+	for _, v := range ds[conf.MaxOutConn:] {
+		v.Client.Stop()
+		nodes.mutex.Lock()
+		delete(nodes.nodes, v.Ip.String())
+		nodes.mutex.Unlock()
+	}
+	log.Println("keep", len(nodes.nodes), "seed host connection")
 }
 
 //启动
 func StartLookUp(ctx context.Context) {
+	defer MWG.Done()
+	MWG.Add(1)
 	mfx := func() {
 		log.Println("lookup start")
 		defer func() {
@@ -157,22 +201,21 @@ func StartLookUp(ctx context.Context) {
 		conf := config.GetConfig()
 		runlookup(conf)
 		ltimer := time.NewTimer(time.Minute * 10)
-		ctimer := time.NewTimer(time.Second)
+		ctimer := time.NewTimer(time.Second * 10)
 		for {
 			select {
 			case <-ltimer.C:
-				runlookup(conf)
 				ltimer.Reset(time.Minute * 10)
 			case <-ctimer.C:
-				runcheckip(conf)
-				ctimer.Reset(time.Second)
+				checkconnping(conf)
+				ctimer.Reset(time.Second * 10)
 			case <-ctx.Done():
 				log.Println("looup stop", ctx.Err())
 				return
 			}
 		}
 	}
-	for ctx.Err() == nil {
+	for ctx.Err() != context.Canceled {
 		time.Sleep(time.Second * 3)
 		mfx()
 	}
