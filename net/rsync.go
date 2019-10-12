@@ -3,33 +3,62 @@ package net
 import (
 	"context"
 	"log"
+	"net"
+	"sync"
 	"time"
 )
 
+type ClientMap struct {
+	mu    sync.Mutex
+	nodes map[string]*Client
+}
+
+func (m *ClientMap) Len() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.nodes)
+}
+
+func (m *ClientMap) Set(c *Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.nodes[c.Key()] = c
+}
+
+func (m *ClientMap) Del(c *Client) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.nodes, c.Key())
+}
+
 var (
-	IpChan = make(chan *SeedItem, 1024)
+	IpChan = make(chan net.IP, 1024)
+	OutIps = &ClientMap{nodes: map[string]*Client{}}
 )
 
 func processMsg(c *Client, msg MsgIO) {
-	cmd := msg.Command()
+	//cmd := msg.Command()
 	//switch cmd {
 	//case NMT_PONG:
 	//	mp := msg.(*MsgPong)
 	//	nodes.SetPing(c.IP, mp.Ping())
 	//}
-	if cmd == NMT_PONG {
-		log.Println(c.IP, "recv", cmd)
-	}
+	//if cmd == NMT_PONG {
+	//
+	//}
+	//log.Println(c.IP, "recv", cmd)
 }
 
-func startconnect(item *SeedItem) {
-	c := NewClientWithIP(ClientTypeOut, item.Ip)
+func startconnect(ip net.IP) {
+	c := NewClientWithIP(ClientTypeOut, ip)
 	c.SetListener(&ClientListener{
 		OnConnected: func() {
-			nodes.SetConnected(item.Ip, c)
+			OutIps.Set(c)
+			log.Println("connection = ", OutIps.Len())
 		},
 		OnClosed: func() {
-			nodes.SetConnected(item.Ip, nil)
+			OutIps.Del(c)
+			log.Println("connection = ", OutIps.Len())
 		},
 		OnLoop: func() {
 
@@ -40,17 +69,20 @@ func startconnect(item *SeedItem) {
 		OnWrite: func(msg MsgIO) {
 
 		},
+		OnError: func(err interface{}) {
+
+		},
 	})
 	c.Run()
 }
 
-func StartRsync(ctx context.Context) {
+func StartDispatch(ctx context.Context) {
 	defer func() {
 		MWG.Done()
 	}()
 	MWG.Add(1)
 	mfx := func() {
-		log.Println("resync start")
+		log.Println("dispatch start")
 		defer func() {
 			if err := recover(); err != nil {
 				log.Println("[RSYNC error]:", err)
@@ -58,10 +90,10 @@ func StartRsync(ctx context.Context) {
 		}()
 		for {
 			select {
-			case item := <-IpChan:
-				startconnect(item)
+			case ip := <-IpChan:
+				startconnect(ip)
 			case <-ctx.Done():
-				log.Println("rsync stop", ctx.Err())
+				log.Println("dispatch stop", ctx.Err())
 				return
 			}
 		}

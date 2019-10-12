@@ -4,7 +4,6 @@ import (
 	"bitcoin/config"
 	"bitcoin/util"
 	"context"
-	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -24,10 +23,17 @@ type ClientListener struct {
 	OnLoop      func()
 	OnMessage   func(m MsgIO)
 	OnWrite     func(m MsgIO)
+	OnError     func(err interface{})
 }
 
 type defaultLister struct {
 	lis *ClientListener
+}
+
+func (l *defaultLister) OnError(err interface{}) {
+	if l.lis != nil && l.lis.OnError != nil {
+		l.lis.OnError(err)
+	}
 }
 
 func (l *defaultLister) OnClosed() {
@@ -74,8 +80,8 @@ type Client struct {
 	Acked     bool //is recv verack
 	VerInfo   *MsgVersion
 	listener  *defaultLister
-	SHOK      bool //recv SendHeaders
 	Ping      int
+	Err       interface{}
 }
 
 func (c *Client) SetListener(lis *ClientListener) {
@@ -124,7 +130,6 @@ func (c *Client) processMsg(m *NetHeader) {
 	case NMT_SENDHEADERS:
 		mp := NewMsgSendHeaders()
 		msg = m.Full(mp)
-		c.SHOK = true
 	case NMT_SENDCMPCT:
 		mp := NewMsgSendCmpct()
 		msg = m.Full(mp)
@@ -194,10 +199,12 @@ func (c *Client) SetTry(v int) *Client {
 }
 
 func (c *Client) OnError(err interface{}) {
-	if e, ok := err.(error); ok && errors.Is(context.Canceled, e) {
-		return
-	}
-	log.Println("ERROR", c.IP, err)
+	c.Err = err
+	c.listener.OnError(err)
+}
+
+func (c *Client) Key() string {
+	return fmt.Sprintf("%s:%d", c.IP, c.Port)
 }
 
 func (c *Client) stop() {
@@ -262,7 +269,7 @@ func (c *Client) run() {
 	//loop timer
 	looptimer := time.NewTimer(time.Second)
 	//
-	ptimer := time.NewTimer(time.Second * 10)
+	ptimer := time.NewTimer(time.Second * 60)
 	for {
 		select {
 		case wp := <-c.wc:
@@ -288,7 +295,7 @@ func (c *Client) run() {
 			if c.IsConnected() && c.Type == ClientTypeOut {
 				c.WriteMsg(NewMsgPing())
 			}
-			ptimer.Reset(time.Second * 10)
+			ptimer.Reset(time.Second * 60)
 		case <-c.ctx.Done():
 			return
 		}

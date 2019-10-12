@@ -15,7 +15,9 @@ func main() {
 	//startup lookup
 	go net.StartLookUp(ctx)
 	//startup block sync
-	go net.StartRsync(ctx)
+	go net.StartDispatch(ctx)
+	//start worker
+	go net.StartWorker(ctx, 4)
 	//wait quit
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
