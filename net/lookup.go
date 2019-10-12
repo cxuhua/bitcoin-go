@@ -20,7 +20,16 @@ type SeedItem struct {
 }
 
 func (si *SeedItem) IsNeedCheck() bool {
-	return !si.Available && !si.Ignore
+	if si.Connected {
+		return false
+	}
+	if si.Ignore {
+		return false
+	}
+	if !si.Available {
+		return false
+	}
+	return true
 }
 
 type SeedMap struct {
