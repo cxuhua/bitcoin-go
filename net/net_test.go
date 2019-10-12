@@ -83,6 +83,9 @@ func TestCoinBaseTX(t *testing.T) {
 	if !tx.IsCoinBase() {
 		t.Errorf("coinbase tx check error")
 	}
+	if !tx.Ins[0].Script.IsPushOnly() {
+		t.Errorf("isnull fauled")
+	}
 	if tx.Hash.String() != "c09b7a4be56da07d0e27fdaa465d9fc60f420e9216dbac70b714125729ca63fb" {
 		t.Errorf("coinbase tx hashid error %v", tx.Hash)
 	}

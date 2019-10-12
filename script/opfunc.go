@@ -149,49 +149,43 @@ func (v ScriptNum) Serialize() []byte {
 	return ret
 }
 
-/*
-// payToPubKeyHashScript creates a new script to pay a transaction
-// output to a 20-byte pubkey hash. It is expected that the input is a valid
-// hash
-//P2PKH
-func payToPubKeyHashScript(pubKeyHash []byte) ([]byte, error) {
-   return NewScriptBuilder().AddOp(OP_DUP).AddOp(OP_HASH160).
-      AddData(pubKeyHash).AddOp(OP_EQUALVERIFY).AddOp(OP_CHECKSIG).
-      Script()
+func (s Script) HasValidOps() bool {
+	for i := 0; i < s.Len(); {
+		b, p, op, ops := s.GetOp(i)
+		if !b {
+			return false
+		}
+		if op > MAX_OPCODE {
+			return false
+		}
+		if len(ops) > MAX_SCRIPT_ELEMENT_SIZE {
+			return false
+		}
+		i = p
+	}
+	return true
 }
 
-//P2WPKH
-// payToWitnessPubKeyHashScript creates a new script to pay to a version 0
-// pubkey hash witness program. The passed hash is expected to be valid.
-func payToWitnessPubKeyHashScript(pubKeyHash []byte) ([]byte, error) {
-   return NewScriptBuilder().AddOp(OP_0).AddData(pubKeyHash).Script()
+func (s Script) IsPushOnly() bool {
+	for i := 0; i < s.Len(); {
+		b, p, op, _ := s.GetOp(i)
+		if !b {
+			return false
+		}
+		if op > OP_16 {
+			return false
+		}
+		i = p
+	}
+	return true
 }
 
-//P2SH
-// payToScriptHashScript creates a new script to pay a transaction output to a
-// script hash. It is expected that the input is a valid hash.
-func payToScriptHashScript(scriptHash []byte) ([]byte, error) {
-   return NewScriptBuilder().AddOp(OP_HASH160).AddData(scriptHash).
-      AddOp(OP_EQUAL).Script()
+func (s Script) IsNull() bool {
+	return s.Len() >= 1 && s[0] == OP_RETURN && NewScript(s[1:]).IsPushOnly()
 }
-
-//P2WSH
-func payToWitnessScriptHashScript(scriptHash []byte) ([]byte, error) {
-   return NewScriptBuilder().AddOp(OP_0).AddData(scriptHash).Script()
-}
-
-//P2PK
-// payToPubkeyScript creates a new script to pay a transaction output to a
-// public key. It is expected that the input is a valid pubkey.
-func payToPubKeyScript(serializedPubKey []byte) ([]byte, error) {
-   return NewScriptBuilder().AddData(serializedPubKey).
-      AddOp(OP_CHECKSIG).Script()
-}
-
-*/
 
 func (s Script) IsP2PK() bool {
-	return (s.Len() == 35 && s[0] == 0x21 && s[34] == OP_CHECKSIG) || (s.Len() == 67 && s[0] == 0x41 && s[66] == OP_CHECKSIG)
+	return (s.Len() == COMPRESSED_PUBLIC_KEY_SIZE+2 && s[0] == COMPRESSED_PUBLIC_KEY_SIZE && s[34] == OP_CHECKSIG) || (s.Len() == PUBLIC_KEY_SIZE+2 && s[0] == PUBLIC_KEY_SIZE && s[66] == OP_CHECKSIG)
 }
 
 //out || in
@@ -219,7 +213,7 @@ func (s Script) HasMultiSig() bool {
 		return false
 	}
 	lnum, pnum, knum := 0, 0, 0
-	for i := 0; ; {
+	for i := 0; i < s.Len(); {
 		b, p, op, ops := s.GetOp(i)
 		if !b {
 			break

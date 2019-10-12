@@ -67,7 +67,7 @@ type TXType int
 
 //tx type
 const (
-	TX_NONSTANDARD TXType = iota
+	TX_UNKNOW TXType = iota
 	TX_P2PK
 	TX_P2PKH
 	TX_P2SH_WPKH
@@ -103,7 +103,7 @@ func (i *TxIn) HasScriptMultiSig() bool {
 //in input data,out=in's out
 func CheckTXType(in *TxIn, out *TxOut) TXType {
 	if in == nil || out == nil || out.Script == nil {
-		return TX_NONSTANDARD
+		return TX_UNKNOW
 	}
 	if out.Script.IsP2PK() {
 		return TX_P2PK
@@ -126,7 +126,7 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	if out.Script.IsP2SH() && in.HasScriptMultiSig() {
 		return TX_P2SH_MSIG
 	}
-	return TX_NONSTANDARD
+	return TX_UNKNOW
 }
 
 func VerifyTX(tx *TX, db db.DbImp) error {
@@ -149,7 +149,7 @@ func VerifyTX(tx *TX, db db.DbImp) error {
 		}
 		out := ptx.Outs[in.OutIndex]
 		typ := CheckTXType(in, out)
-		if typ == TX_NONSTANDARD {
+		if typ == TX_UNKNOW {
 			return fmt.Errorf("in %d checktype not support", idx)
 		}
 		var verifyer Verifyer
