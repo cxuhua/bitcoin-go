@@ -1,6 +1,7 @@
 package net
 
 import (
+	"bitcoin/config"
 	"context"
 	"log"
 	"net"
@@ -47,26 +48,23 @@ func (m *ClientMap) Del(c *Client) {
 }
 
 var (
-	IpChan = make(chan net.IP, 1024)
-	OutIps = &ClientMap{nodes: map[string]*Client{}}
-	InIps  = &ClientMap{nodes: map[string]*Client{}}
+	IpChan   = make(chan net.IP, 1024)
+	OutIps   = &ClientMap{nodes: map[string]*Client{}}
+	InIps    = &ClientMap{nodes: map[string]*Client{}}
+	RecvAddr = make(chan *MsgAddr, 10)
 )
 
-func processMsg(c *Client, msg MsgIO) {
-	//cmd := msg.Command()
-	//switch cmd {
-	//case NMT_PONG:
-	//	mp := msg.(*MsgPong)
-	//	nodes.SetPing(c.IP, mp.Ping())
-	//}
-	//if cmd == NMT_PONG {
-	//
-	//}
-	//log.Println(c.IP, "recv", cmd)
-}
-
-func startconnect(ip net.IP) {
-	c := NewClientWithIP(ClientTypeOut, ip)
+func startconnect(ip net.IP, port int) {
+	conf := config.GetConfig()
+	if !ip.IsGlobalUnicast() {
+		return
+	}
+	c := NewClientWithIPPort(ClientTypeOut, ip, uint16(port))
+	//don't connect self
+	if c.Key() == conf.GetLocalAddr() {
+		return
+	}
+	//don't repeat connect
 	if OutIps.Has(c) {
 		return
 	}
@@ -81,7 +79,13 @@ func startconnect(ip net.IP) {
 
 		},
 		OnMessage: func(msg MsgIO) {
-			processMsg(c, msg)
+			cmd := msg.Command()
+			switch cmd {
+			case NMT_BLOCK, NMT_TX, NMT_HEADERS:
+				WorkerQueue <- NewWorkerUnit(msg, c)
+			case NMT_ADDR:
+				RecvAddr <- msg.(*MsgAddr)
+			}
 		},
 		OnWrite: func(msg MsgIO) {
 
@@ -90,6 +94,7 @@ func startconnect(ip net.IP) {
 			//log.Println(c.IP, "close err ", err)
 		},
 	})
+	log.Println("start connect", c.IP, c.Port)
 	c.Run()
 }
 
@@ -97,7 +102,17 @@ func printStatus() {
 	log.Println("Out Count=", OutIps.Len(), "In Count=", InIps.Len(), "Conn Queue=", len(IpChan))
 }
 
+func processAddrs(addr *MsgAddr) {
+	for _, v := range addr.Addrs {
+		if v.Service&NODE_NETWORK != 0 {
+			continue
+		}
+		startconnect(v.IpAddr, int(v.Port))
+	}
+}
+
 func StartDispatch(ctx context.Context) {
+	conf := config.GetConfig()
 	defer func() {
 		MWG.Done()
 	}()
@@ -112,11 +127,13 @@ func StartDispatch(ctx context.Context) {
 		stimer := time.NewTimer(time.Second * 5)
 		for {
 			select {
+			case addrs := <-RecvAddr:
+				processAddrs(addrs)
 			case <-stimer.C:
 				printStatus()
 				stimer.Reset(time.Second * 5)
 			case ip := <-IpChan:
-				startconnect(ip)
+				startconnect(ip, conf.ListenPort)
 			case <-ctx.Done():
 				log.Println("dispatch stop", ctx.Err())
 				return

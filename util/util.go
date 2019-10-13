@@ -13,20 +13,18 @@ import (
 )
 
 func ParseAddr(addr string) (net.IP, uint16) {
-	ip := net.IP{}
-	port := uint16(0)
-	vs := strings.Split(addr, ":")
-	if len(vs) > 0 {
-		ip = net.ParseIP(vs[0])
+	conf := config.GetConfig()
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil {
+		panic(err)
 	}
-	if len(vs) > 1 {
-		iv, err := strconv.ParseInt(vs[1], 10, 32)
-		if err != nil {
-			panic(err)
-		}
-		port = uint16((iv))
+	iport := conf.ListenPort
+	ip := net.ParseIP(host)
+	pv, err := strconv.ParseInt(port, 10, 32)
+	if err == nil {
+		iport = int(pv)
 	}
-	return ip, port
+	return ip, uint16(iport)
 }
 
 func HexToBytes(s string) []byte {

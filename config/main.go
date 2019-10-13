@@ -1,8 +1,8 @@
 package config
 
 import (
-	"strconv"
-	"strings"
+	"fmt"
+	"net"
 )
 
 const (
@@ -14,6 +14,8 @@ const (
 )
 
 type Config struct {
+	LocalIP    string
+	ListenAddr string
 	//default port
 	ListenPort int
 	//max connected me client
@@ -44,21 +46,8 @@ func (c Config) Base58Prefix(idx int) []byte {
 	return c.b58prefixs[idx]
 }
 
-func (c Config) GetLocalAddr() (string, uint16) {
-	ip := ""
-	pv := uint16(8333)
-	ss := strings.Split(c.LocalAddr, ":")
-	if len(ss) > 0 {
-		ip = ss[0]
-	}
-	if len(ss) > 1 {
-		v, err := strconv.ParseInt(ss[1], 10, 32)
-		if err != nil {
-			panic(err)
-		}
-		pv = uint16((v))
-	}
-	return ip, pv
+func (c Config) GetLocalAddr() string {
+	return net.JoinHostPort(c.LocalIP, fmt.Sprintf("%d", c.ListenPort))
 }
 
 var (
@@ -73,6 +62,8 @@ func GetConfig() *Config {
 
 	c := &Config{Id: "main"}
 
+	c.LocalIP = "192.168.31.198"
+	c.ListenAddr = "0.0.0.0"
 	c.ListenPort = 8333
 
 	c.MaxInConn = 50

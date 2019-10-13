@@ -8,6 +8,35 @@ import (
 	"time"
 )
 
+const (
+	WorkerQueueSize = 64
+)
+
+type WorkerUnit struct {
+	m MsgIO
+	c *Client
+}
+
+func NewWorkerUnit(m MsgIO, c *Client) *WorkerUnit {
+	return &WorkerUnit{c: c, m: m}
+}
+
+var (
+	WorkerQueue = make(chan *WorkerUnit, WorkerQueueSize)
+)
+
+func processBlock(db db.DbImp, block *MsgBlock) {
+
+}
+
+func processTX(db db.DbImp, tx *MsgTX) {
+
+}
+
+func processHeaders(db db.DbImp, headers *MsgHeaders) {
+
+}
+
 func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
 	defer wg.Done()
 	mfx := func(db db.DbImp) error {
@@ -19,6 +48,16 @@ func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
 		}()
 		for {
 			select {
+			case unit := <-WorkerQueue:
+				cmd := unit.m.Command()
+				switch cmd {
+				case NMT_BLOCK:
+					processBlock(db, unit.m.(*MsgBlock))
+				case NMT_TX:
+					processTX(db, unit.m.(*MsgTX))
+				case NMT_HEADERS:
+					processHeaders(db, unit.m.(*MsgHeaders))
+				}
 			case <-ctx.Done():
 				log.Println("stop worker unit", i, ctx.Err())
 				return ctx.Err()

@@ -229,11 +229,17 @@ func (c *Client) stop() {
 		c.Close()
 		c.connected = false
 	}
+	c.Acked = false
 	c.OnClosed()
 }
 
 func (c *Client) run() {
 	defer c.stop()
+	//init write msg queue
+	c.wc = make(chan MsgIO, 10)
+	//init read msg queue
+	c.rc = make(chan *NetHeader, 10)
+	//connect host
 	for c.Type == ClientTypeOut && !c.connected {
 		err := c.Connect()
 		if err != nil {
@@ -250,6 +256,7 @@ func (c *Client) run() {
 		}
 		c.OnConnected()
 	}
+	//start loop readmsg
 	go func() {
 		defer func() {
 			if err := recover(); err != nil {
@@ -271,6 +278,7 @@ func (c *Client) run() {
 	ltimer := time.NewTimer(time.Second)
 	//
 	ptimer := time.NewTimer(time.Second * 60)
+	//start loop process timer msg
 	for {
 		select {
 		case wp := <-c.wc:
@@ -325,26 +333,24 @@ func (c *Client) Connect() error {
 	return nil
 }
 
-func NewClientWithIP(typ ClientType, ip net.IP) *Client {
-	conf := config.GetConfig()
+func NewClientWithIPPort(typ ClientType, ip net.IP, port uint16) *Client {
 	c := &Client{}
 	c.connected = false
 	c.IP = ip
-	c.Port = uint16(conf.ListenPort)
+	c.Port = port
 	c.Type = typ
-	c.wc = make(chan MsgIO, 10)
-	c.rc = make(chan *NetHeader, 10)
 	c.try = 3
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.listener = &defaultLister{}
 	return c
 }
 
+func NewClientWithIP(typ ClientType, ip net.IP) *Client {
+	conf := config.GetConfig()
+	return NewClientWithIPPort(typ, ip, uint16(conf.ListenPort))
+}
+
 func NewClient(typ ClientType, addr string) *Client {
 	ip, port := util.ParseAddr(addr)
-	c := NewClientWithIP(typ, ip)
-	if port != 0 {
-		c.Port = port
-	}
-	return c
+	return NewClientWithIPPort(typ, ip, port)
 }
