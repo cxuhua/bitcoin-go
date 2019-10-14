@@ -69,7 +69,7 @@ func (vfy *p2shMSIGVerify) Verify(db db.DbImp) error {
 		return errors.New("in script error nil")
 	}
 	//find pubkey and sigs
-	for i := 0; ; {
+	for i := 0; i < vfy.in.Script.Len(); {
 		b, p, op, ops := vfy.in.Script.GetOp(i)
 		if !b {
 			break
