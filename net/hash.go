@@ -3,6 +3,7 @@ package net
 import (
 	"bytes"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"strings"
 )
@@ -29,6 +30,15 @@ func (h HashID) ToUHash() UIHash {
 		x[i] = ByteOrder.Uint32(h[i*4 : i*4+4])
 	}
 	return x
+}
+
+func (h UIHash) IsZero() bool {
+	for _, v := range h {
+		if v != 0 {
+			return false
+		}
+	}
+	return true
 }
 
 func (h UIHash) String() string {
@@ -59,6 +69,17 @@ func (b UIHash) Bits() uint {
 	return 0
 }
 
+func (h UIHash) MulUInt32(v uint32) UIHash {
+	a := UIHash{}
+	carry := uint64(0)
+	for i := 0; i < HashIDWidth; i++ {
+		n := carry + uint64(v)*uint64(h[i])
+		a[i] = uint32(n & 0xffffffff)
+		carry = n >> 32
+	}
+	return a
+}
+
 // c = a * b
 func (h UIHash) Mul(v UIHash) UIHash {
 	a := UIHash{}
@@ -73,7 +94,73 @@ func (h UIHash) Mul(v UIHash) UIHash {
 	return a
 }
 
-// /
+//a = ^h
+func (h UIHash) Neg() UIHash {
+	a := UIHash{}
+	for i := 0; i < HashIDWidth; i++ {
+		a[i] = ^h[i]
+	}
+	return a.Add(NewU64Hash(1))
+}
+
+// >0 =  >
+// <0 =  <
+// =0 =  =
+func (h UIHash) Cmp(b UIHash) int {
+	for i := HashIDWidth - 1; i >= 0; i-- {
+		if h[i] < b[i] {
+			return -1
+		}
+		if h[i] > b[i] {
+			return +1
+		}
+	}
+	return 0
+}
+
+//a = b - c
+func (h UIHash) Sub(b UIHash) UIHash {
+	return h.Add(b.Neg())
+}
+
+//a = b + c
+func (h UIHash) Add(b UIHash) UIHash {
+	a := UIHash{}
+	carry := uint64(0)
+	for i := 0; i < HashIDWidth; i++ {
+		n := carry + uint64(h[i]) + uint64(b[i])
+		a[i] = uint32(n & 0xffffffff)
+		carry = n >> 32
+	}
+	return a
+}
+
+// a = b /c
+
+func (h UIHash) Div(b UIHash) UIHash {
+	a := UIHash{}
+	num := h
+	div := b
+	nbits := num.Bits()
+	dbits := div.Bits()
+	if dbits == 0 {
+		panic(errors.New("Division by zero"))
+	}
+	if dbits > nbits {
+		return a
+	}
+	shift := int(nbits - dbits)
+	div = div.Lshift(uint(shift))
+	for shift >= 0 {
+		if num.Cmp(div) >= 0 {
+			num = num.Sub(div)
+			a[shift/32] |= (1 << (shift & 31))
+		}
+		div = div.Rshift(1)
+		shift--
+	}
+	return a
+}
 
 //>>
 func (b UIHash) Rshift(shift uint) UIHash {

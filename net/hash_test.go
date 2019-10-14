@@ -1,8 +1,10 @@
 package net
 
 import (
+	"bitcoin/config"
 	"log"
 	"testing"
+	"time"
 )
 
 func TestU32HashMul(t *testing.T) {
@@ -70,33 +72,35 @@ func TestSetCompact(t *testing.T) {
 	}
 }
 
-//2012-09-20 06:14:11
-//2012-10-03 09:17:01
-func TestU32HashCompact(t *testing.T) {
-	//span := int64(14 * 24 * 60 * 60)
-	//t1, _ := time.Parse("2006-01-02 15:04:05", "2012-09-20 06:14:11")
-	//t2, _ := time.Parse("2006-01-02 15:04:05", "2012-10-03 09:17:01")
-	//sub := t2.Sub(t1)
-	//subv := int64(sub.Seconds())
-	//
-	//if subv < span/4 {
-	//	subv = span / 4
-	//}
-	//if subv > span*4 {
-	//	subv = span * 4
-	//}
-	//
-	//n := U32Hash{}
-	//log.Println(n.SetCompact(0x1a05db8b))
-	//log.Println(n)
-	////n = n.Mul(uint32(subv))
-	//
-	//log.Printf("%X", n.Compact(false))
-	//n *= subv
-	//n /= span
-
-	//pl := NewHexBHash("00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff").ToU32Hash()
-	//log.Printf("%x\n", pl.Compact(false))
+//(203616-2016) -> 2012-10-03 09:11:00
+//(203616-1) -> 2012-10-17 07:14:55
+//(203616-1) Bits = 0x1a057e08
+//result:1a0575ef
+func TestU32HashCompact2(t *testing.T) {
+	conf := config.GetConfig()
+	limit := NewHexUHash(conf.PowLimit)
+	span := int64(14 * 24 * 60 * 60)
+	t1, _ := time.Parse("2006-01-02 15:04:05", "2012-10-03 09:11:00")
+	t2, _ := time.Parse("2006-01-02 15:04:05", "2012-10-17 07:14:55")
+	sub := t2.Sub(t1)
+	subv := int64(sub.Seconds())
+	if subv < span/4 {
+		subv = span / 4
+	}
+	if subv > span*4 {
+		subv = span * 4
+	}
+	n := UIHash{}
+	log.Println(n.SetCompact(0x1a057e08))
+	log.Println(n)
+	n = n.MulUInt32(uint32(subv))
+	n = n.Div(NewU64Hash(uint64(span)))
+	if n.Cmp(limit) > 0 {
+		n = limit
+	}
+	if n.Compact(false) != 0x1a0575ef {
+		t.Errorf("error")
+	}
 }
 
 func TestHashEqual(t *testing.T) {
