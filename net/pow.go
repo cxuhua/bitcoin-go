@@ -36,11 +36,11 @@ func CalculateWorkRequired(ct uint32, pt uint32, pw uint32, conf *config.Config)
 	if sub <= 0 {
 		panic(errors.New("ct pt error"))
 	}
-	if sub < span/4 {
-		sub = span / 4
+	if sv := span / 4; sub < sv {
+		sub = sv
 	}
-	if sub > span*4 {
-		sub = span * 4
+	if sv := span * 4; sub > sv {
+		sub = sv
 	}
 	n := UIHash{}
 	n.SetCompact(pw)
