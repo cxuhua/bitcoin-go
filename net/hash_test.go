@@ -16,9 +16,7 @@ func TestU32HashMul(t *testing.T) {
 	x1 = NewHexUHash("7D1DE5EAF9B156D53208F033B5AA8122D2d2355d5e12292b121156cfdb4a529c")
 	x2 = NewUHash([]byte("\x70\x32\x1d\x7c\x47\xa5\x6b\x40\x26\x7e\x0a\xc3\xa6\x9c\xb6\xbf\x13\x30\x47\xa3\x19\x2d\xda\x71\x49\x13\x72\xf0\xb4\xca\x81\xd7"))
 	x = x1.Mul(x2)
-	log.Println(x1, x2)
-	//de37805e9986996cfba76ff6ba51c008df851987d9dd323f0e5de07760529c40
-	if x.String() != "62a38c0486f01e45879d7910a7761bf30d5237e9873f9bff3642a732c4d84f10" {
+	if x.String() != "de37805e9986996cfba76ff6ba51c008df851987d9dd323f0e5de07760529c40" {
 		t.Errorf("mul error")
 	}
 }
