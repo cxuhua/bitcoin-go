@@ -5,7 +5,7 @@ import (
 	"errors"
 )
 
-//
+// Check whether a block hash satisfies the proof-of-work requirement specified by nBits
 func CheckProofOfWork(hash HashID, bits uint32, conf *config.Config) bool {
 	h := UIHash{}
 	n, o := h.SetCompact(bits)
