@@ -26,9 +26,9 @@ func CheckProofOfWork(hash HashID, bits uint32, conf *config.Config) bool {
 	return ch.Cmp(h) <= 0
 }
 
-//ct = current height - 1 block time
-//pt = current height - 2016 block time
-//pw = current height - 1 bits
+//ct = lastBlock blockTime
+//pt = lastBlock - 2016 + 1 blockTime
+//pw = lastBlock's bits
 func CalculateWorkRequired(ct uint32, pt uint32, pw uint32, conf *config.Config) uint32 {
 	span := uint32(conf.PowTargetTimespan)
 	limit := NewHexUHash(conf.PowLimit)

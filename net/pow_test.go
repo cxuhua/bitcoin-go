@@ -7,9 +7,10 @@ import (
 )
 
 //201600 bits compute
-//(201600-2016) -> 2012-09-20 06:14:11
-//(201600-1) -> 2012-10-03 09:17:01
-//(201600-1) Bits = 0x1a05db8b
+//lastBlock = 2016599
+//(lastBlock-2016 + 1) -> 2012-09-20 06:14:11
+//lastBlock -> 2012-10-03 09:17:01
+//lastBlock Bits = 0x1a05db8b
 //result:1a057e08
 func TestCalculateWorkRequired(t *testing.T) {
 	conf := config.GetConfig()
