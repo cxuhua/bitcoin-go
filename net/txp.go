@@ -1,78 +1,11 @@
 package net
 
 import (
-	"bitcoin/config"
 	"bitcoin/db"
 	"bitcoin/script"
 	"bytes"
-	"encoding/hex"
 	"errors"
 )
-
-const (
-	COIN      = Amount(100000000)
-	MAX_MONEY = Amount(21000000 * COIN)
-)
-
-func GetCoinbaseReward(h int) Amount {
-	conf := config.GetConfig()
-	halvings := h / conf.SubHalving
-	if halvings >= 64 {
-		return 0
-	}
-	n := 50 * COIN
-	n >>= halvings
-	return n
-}
-
-type Amount int64
-
-func (a Amount) IsRange() bool {
-	return a >= 0 && a < MAX_MONEY
-}
-
-type HashID [32]byte
-
-func (h HashID) String() string {
-	sv := h.Swap()
-	return hex.EncodeToString(sv[:])
-}
-
-func (b HashID) IsZero() bool {
-	bz := make([]byte, len(b))
-	return bytes.Equal(b[:], bz)
-}
-
-func (b HashID) Equal(v HashID) bool {
-	return bytes.Equal(b[:], v[:])
-}
-
-func (b HashID) Bytes() []byte {
-	return b[:]
-}
-
-func (b HashID) Swap() HashID {
-	v := HashID{}
-	j := 0
-	for i := len(b) - 1; i >= 0; i-- {
-		v[j] = b[i]
-		j++
-	}
-	return v
-}
-
-func NewHexBHash(s string) HashID {
-	b := HashID{}
-	if len(s) != len(b)*2 {
-		panic(SizeError)
-	}
-	v, err := hex.DecodeString(s)
-	if err != nil {
-		panic(err)
-	}
-	copy(b[:], v)
-	return b.Swap()
-}
 
 type Inventory struct {
 	Type uint32
@@ -97,15 +30,19 @@ type BHeader struct {
 	Bits      uint32
 	Nonce     uint32
 	Count     uint64
+	Hash      HashID
 }
 
 func (m *BHeader) Read(h *NetHeader) {
+	sp := h.Pos()
 	m.Ver = h.ReadUInt32()
 	h.ReadBytes(m.Prev[:])
 	h.ReadBytes(m.Merkle[:])
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
+	ep := h.Pos()
+	HASH256To(h.SubBytes(sp, ep), &m.Hash)
 	m.Count, _ = h.ReadVarInt()
 }
 
@@ -593,24 +530,25 @@ func NewMsgHeaders() *MsgHeaders {
 //
 type MsgGetBlocks struct {
 	Ver    uint32
-	Blocks []*HashID
-	Stop   *HashID
+	Blocks []HashID
+	Stop   HashID
 }
 
 func (m *MsgGetBlocks) Command() string {
 	return NMT_GETBLOCKS
 }
 
+func (m *MsgGetBlocks) AddHashID(hv HashID) {
+	m.Blocks = append(m.Blocks, hv)
+}
+
 func (m *MsgGetBlocks) Read(h *NetHeader) {
 	m.Ver = h.ReadUInt32()
 	num, _ := h.ReadVarInt()
-	m.Blocks = make([]*HashID, num)
+	m.Blocks = make([]HashID, num)
 	for i, _ := range m.Blocks {
-		v := &HashID{}
-		h.ReadBytes(v[:])
-		m.Blocks[i] = v
+		h.ReadBytes(m.Blocks[i][:])
 	}
-	m.Stop = &HashID{}
 	h.ReadBytes(m.Stop[:])
 }
 
@@ -626,7 +564,7 @@ func (m *MsgGetBlocks) Write(h *NetHeader) {
 func NewMsgGetBlocks() *MsgGetBlocks {
 	return &MsgGetBlocks{
 		Ver:  PROTOCOL_VERSION,
-		Stop: &HashID{},
+		Stop: HashID{},
 	}
 }
 
@@ -907,23 +845,26 @@ func NewMsgINV() *MsgINV {
 
 type MsgGetHeaders struct {
 	Ver    uint32
-	Blocks []*HashID
-	Stop   *HashID
+	Blocks []HashID
+	Stop   HashID
 }
 
 func (m *MsgGetHeaders) Command() string {
 	return NMT_GETHEADERS
 }
 
+func (m *MsgGetHeaders) AddHashID(hv HashID) {
+	m.Blocks = append(m.Blocks, hv)
+}
+
 func (m *MsgGetHeaders) Read(h *NetHeader) {
 	m.Ver = h.ReadUInt32()
 	num, _ := h.ReadVarInt()
-	m.Blocks = make([]*HashID, num)
+	m.Blocks = make([]HashID, num)
 	for i, _ := range m.Blocks {
-		m.Blocks[i] = &HashID{}
 		h.ReadBytes(m.Blocks[i][:])
 	}
-	m.Stop = &HashID{}
+	m.Stop = HashID{}
 	h.ReadBytes(m.Stop[:])
 }
 
@@ -937,5 +878,5 @@ func (m *MsgGetHeaders) Write(h *NetHeader) {
 }
 
 func NewMsgGetHeaders() *MsgGetHeaders {
-	return &MsgGetHeaders{}
+	return &MsgGetHeaders{Ver: PROTOCOL_VERSION}
 }

@@ -2,13 +2,23 @@ package main
 
 import (
 	"bitcoin/net"
-	"bytes"
 	"log"
 	"testing"
 )
 
+func getdata(c *net.Client, bid string) {
+	d := net.NewMsgGetData()
+	d.Invs = make([]*net.Inventory, 1)
+	d.Invs[0] = &net.Inventory{
+		Type: net.MSG_BLOCK,
+		ID:   net.NewHexBHash(bid),
+	}
+	net.NewMsgGetBlocks()
+	c.WriteMsg(d)
+}
+
 func TestRunClient(t *testing.T) {
-	c := net.NewClient(net.ClientTypeOut, "54.36.172.26:8333")
+	c := net.NewClient(net.ClientTypeOut, "47.97.62.19:8333")
 	c.Sync(&net.ClientListener{
 		OnConnected: func() {
 			log.Println("OnConnected")
@@ -19,19 +29,49 @@ func TestRunClient(t *testing.T) {
 		OnLoop: func() {
 			//
 		},
+		OnWrite: func(m net.MsgIO) {
+			log.Println("send message", m.Command())
+		},
 		OnMessage: func(m net.MsgIO) {
-			log.Println(m.Command())
-			if m.Command() == net.NMT_VERACK {
-				c.WriteMsg(net.NewMsgSendHeaders())
+			cmd := m.Command()
+			log.Println(cmd)
+			if cmd == net.NMT_VERACK {
+				//getdata(c, "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
+				//m := net.NewMsgGetHeaders()
+				//m.Blocks = make([]net.HashID, 1)
+				//m.Blocks[0] = net.NewHexBHash("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
+				//c.WriteMsg(m)
+				//d := net.NewMsgSendHeaders()
+				//c.WriteMsg(d)
+				//getdata(c, "0000000000000000000ab3075c92925e79f4c76cf5d1de4b07e48586de777026")
+				//m := net.NewMsgGetBlocks()
+				//m.AddHashID(net.NewHexBHash("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"))
+				//m.Stop = net.NewHexBHash("000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd")
+				//c.WriteMsg(m)
+
+				m := net.NewMsgGetHeaders()
+				m.AddHashID(net.NewHexBHash("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"))
+				m.Stop = net.NewHexBHash("000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd")
+				c.WriteMsg(m)
+			} else if cmd == net.NMT_BLOCK {
+				d := m.(*net.MsgBlock)
+				log.Println(d.Hash)
+				//getdata(c, d.Prev.String())
+			} else if cmd == net.NMT_GETHEADERS {
+				m := m.(*net.MsgGetHeaders)
+				log.Println(m)
+			} else if cmd == net.NMT_INV {
+				m := m.(*net.MsgINV)
+
+				for _, v := range m.Invs {
+					log.Println(v.Type, v.ID)
+				}
+			} else if cmd == net.NMT_HEADERS {
+				m := m.(*net.MsgHeaders)
+				for _, v := range m.Headers {
+					log.Println(v.Hash)
+				}
 			}
 		},
 	})
-}
-
-type X [20]byte
-
-func TestCopy(t *testing.T) {
-	var a []byte
-	var b []byte
-	log.Println(bytes.Compare(a, b))
 }

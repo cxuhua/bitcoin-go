@@ -82,6 +82,7 @@ type Client struct {
 	listener  *defaultLister
 	Ping      int
 	Err       interface{}
+	FeeRate   Amount //trans fee
 }
 
 func (c *Client) SetListener(lis *ClientListener) {
@@ -139,6 +140,7 @@ func (c *Client) processMsg(m *NetHeader) {
 	case NMT_FEEFILTER:
 		mp := NewMsgFeeFilter()
 		msg = m.Full(mp)
+		c.FeeRate = Amount(mp.FeeRate)
 	case NMT_INV:
 		mp := NewMsgINV()
 		msg = m.Full(mp)
@@ -160,7 +162,9 @@ func (c *Client) processMsg(m *NetHeader) {
 	case NMT_ALERT:
 		mp := NewMsgAlert()
 		msg = m.Full(mp)
-		log.Println(mp)
+	case NMT_MERKLEBLOCK:
+		mp := NewMsgMerkleBlock()
+		msg = m.Full(mp)
 	default:
 		log.Println(m.Command, " not process", c.IP)
 		return
@@ -233,12 +237,16 @@ func (c *Client) stop() {
 	c.OnClosed()
 }
 
-func (c *Client) run() {
-	defer c.stop()
+func (c *Client) init() {
 	//init write msg queue
 	c.wc = make(chan MsgIO, 10)
 	//init read msg queue
 	c.rc = make(chan *NetHeader, 10)
+}
+
+func (c *Client) run() {
+	defer c.stop()
+	c.init()
 	//connect host
 	for c.Type == ClientTypeOut && !c.connected {
 		err := c.Connect()
@@ -300,9 +308,7 @@ func (c *Client) run() {
 			if !c.Acked {
 				break
 			}
-			if c.IsConnected() && c.Type == ClientTypeOut {
-				c.WriteMsg(NewMsgPing())
-			}
+			c.WriteMsg(NewMsgPing())
 			ptimer.Reset(time.Second * 60)
 		case <-c.ctx.Done():
 			return

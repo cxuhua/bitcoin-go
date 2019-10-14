@@ -40,6 +40,13 @@ type Config struct {
 	SubHalving int
 	//bech32 address prefix
 	Bech32HRP string
+	//
+	GenesisBlock string
+
+	PowLimit                string
+	PowTargetTimespan       int
+	PowTargetSpacing        int
+	MinerConfirmationWindow int
 }
 
 func (c Config) Base58Prefix(idx int) []byte {
@@ -72,6 +79,12 @@ func GetConfig() *Config {
 
 	c.b58prefixs = map[int][]byte{}
 	c.MsgStart = []byte{0xF9, 0xBE, 0xB4, 0xD9}
+
+	c.PowLimit = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+	c.PowTargetTimespan = 14 * 24 * 60 * 60 // two weeks
+	c.PowTargetSpacing = 10 * 60
+	c.MinerConfirmationWindow = 2016 // PowTargetTimespan / PowTargetSpacing
+	c.GenesisBlock = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
 
 	c.Seeds = []string{
 		"seed.bitcoin.sipa.be",

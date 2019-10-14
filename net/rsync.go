@@ -5,6 +5,7 @@ import (
 	"context"
 	"log"
 	"net"
+	"sort"
 	"sync"
 	"time"
 )
@@ -12,6 +13,25 @@ import (
 type ClientMap struct {
 	mu    sync.Mutex
 	nodes map[string]*Client
+}
+
+//find Fastest networdk
+func (m *ClientMap) Fastest(num int) []*Client {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ds := []*Client{}
+	for _, v := range m.nodes {
+		if v.Ping > 0 {
+			ds = append(ds, v)
+		}
+	}
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].Ping < ds[j].Ping
+	})
+	if num > len(ds) {
+		num = len(ds)
+	}
+	return ds[:num]
 }
 
 func (m *ClientMap) All(f func(c *Client)) {
@@ -81,7 +101,7 @@ func startconnect(ip net.IP, port int) {
 		OnMessage: func(msg MsgIO) {
 			cmd := msg.Command()
 			switch cmd {
-			case NMT_BLOCK, NMT_TX, NMT_HEADERS:
+			case NMT_BLOCK, NMT_TX, NMT_HEADERS, NMT_INV:
 				WorkerQueue <- NewWorkerUnit(msg, c)
 			case NMT_ADDR:
 				RecvAddr <- msg.(*MsgAddr)
@@ -100,6 +120,10 @@ func startconnect(ip net.IP, port int) {
 
 func printStatus() {
 	log.Println("Out Count=", OutIps.Len(), "In Count=", InIps.Len(), "Conn Queue=", len(IpChan))
+	ds := OutIps.Fastest(5)
+	for _, v := range ds {
+		log.Println(v.IP, v.Ping)
+	}
 }
 
 func processAddrs(addr *MsgAddr) {
