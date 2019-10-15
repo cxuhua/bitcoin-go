@@ -58,6 +58,10 @@ func (h *UIHash) SetValue(v interface{}) {
 	}
 }
 
+func (h HashID) GetUint64(idx int) uint64 {
+	return ByteOrder.Uint64(h[idx*8 : idx*8+8])
+}
+
 func (h HashID) ToUHash() UIHash {
 	x := UIHash{}
 	for i := 0; i < UIHashWidth; i++ {
