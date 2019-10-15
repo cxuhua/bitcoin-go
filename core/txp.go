@@ -737,12 +737,8 @@ func (m *MsgBlock) Write(h *NetHeader) {
 	m.Count = len(m.Txs)
 }
 
-func (m *MsgBlock) MarkleNodes() MerkleArray {
-	nodes := MerkleArray{}
-	for _, v := range m.Txs {
-		nodes = append(nodes, v.Hash[:])
-	}
-	return nodes
+func (m *MsgBlock) MarkleNodes() *MerkleTree {
+	return NewMerkleTree(len(m.Txs))
 }
 
 func (m *MsgBlock) MarkleId() HashID {

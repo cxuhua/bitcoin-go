@@ -1,135 +1,201 @@
 package core
 
 import (
-	"bitcoin/util"
 	"errors"
+
+	"github.com/willf/bitset"
 )
 
 type MerkleNode []byte
 
-type MerkleArray []MerkleNode
-
-func (a MerkleArray) Hash(n1 MerkleNode, n2 MerkleNode) []byte {
-	v := append([]byte{}, n1...)
-	v = append(v, n2...)
-	return util.HASH256(v)
+type MerkleTree struct {
+	trans int
+	vhash []HashID
+	bits  []bool
+	bad   bool
 }
 
-func (a MerkleArray) TreeWidth(h int) int {
-	return (len(a) + (1 << h) - 1) >> h
+func NewMerkleTree(num int) *MerkleTree {
+	v := &MerkleTree{}
+	v.trans = num
+	v.vhash = []HashID{}
+	v.bits = []bool{}
+	v.bad = false
+	return v
 }
 
-func (a MerkleArray) CalcHash(h int, pos int) []byte {
-	if len(a) == 0 {
+func GetMerkleTree(num int, hashs []HashID, bits *bitset.BitSet) *MerkleTree {
+	v := &MerkleTree{}
+	v.trans = num
+	v.vhash = hashs
+	v.bits = []bool{}
+	for i := uint(0); i < bits.Len(); i++ {
+		v.bits = append(v.bits, bits.Test(i))
+	}
+	v.bad = false
+	return v
+}
+
+func (tree *MerkleTree) Trans() int {
+	return tree.trans
+}
+
+func (tree *MerkleTree) Hashs() []HashID {
+	return tree.vhash
+}
+
+func (tree *MerkleTree) Bits() *bitset.BitSet {
+	ret := bitset.New(uint(len(tree.bits)))
+	for i, v := range tree.bits {
+		ret.SetTo(uint(i), v)
+	}
+	return ret
+}
+
+func (tree *MerkleTree) Hash(n1 HashID, n2 HashID) HashID {
+	ret := HashID{}
+	v := append([]byte{}, n1[:]...)
+	v = append(v, n2[:]...)
+	return HASH256To(v, &ret)
+}
+
+func (tree *MerkleTree) Height() int {
+	h := 0
+	for tree.TreeWidth(h) > 1 {
+		h++
+	}
+	return h
+}
+
+func (tree *MerkleTree) Build(ids []HashID, vb *bitset.BitSet) {
+	tree.bad = false
+	tree.vhash = []HashID{}
+	tree.bits = []bool{}
+	h := tree.Height()
+	tree.build(h, 0, ids, vb)
+}
+
+func (tree *MerkleTree) build(h int, pos int, ids []HashID, vb *bitset.BitSet) {
+	match := false
+	for p := pos << h; p < (pos+1)<<h && p < tree.trans; p++ {
+		if vb.Test(uint(p)) {
+			match = true
+		}
+	}
+	tree.bits = append(tree.bits, match)
+	if h == 0 || !match {
+		tree.vhash = append(tree.vhash, tree.CalcHash(h, pos, ids))
+	} else {
+		tree.build(h-1, pos*2, ids, vb)
+		if pos*2+1 < tree.TreeWidth(h-1) {
+			tree.build(h-1, pos*2+1, ids, vb)
+		}
+	}
+}
+
+func (tree *MerkleTree) Extract() (HashID, []HashID, []int) {
+	ids := make([]HashID, 0)
+	idx := make([]int, 0)
+	tree.bad = false
+	if tree.trans == 0 {
+		return HashID{}, nil, nil
+	}
+	if uint(tree.trans) > MAX_BLOCK_WEIGHT/MIN_TRANSACTION_WEIGHT {
+		return HashID{}, nil, nil
+	}
+	if len(tree.vhash) > tree.trans {
+		return HashID{}, nil, nil
+	}
+	if len(tree.bits) < len(tree.vhash) {
+		return HashID{}, nil, nil
+	}
+	h := tree.Height()
+	nbits, nhash := 0, 0
+	root := tree.extract(h, 0, &nbits, &nhash, &ids, &idx)
+	if tree.bad {
+		return HashID{}, nil, nil
+	}
+	if (nbits+7)/8 != (len(tree.bits)+7)/8 {
+		return HashID{}, nil, nil
+	}
+	if nhash != len(tree.vhash) {
+		return HashID{}, nil, nil
+	}
+	return root, ids, idx
+}
+
+func (tree *MerkleTree) extract(h int, pos int, nbits *int, nhash *int, ids *[]HashID, idx *[]int) HashID {
+	if *nbits >= len(tree.bits) {
+		tree.bad = true
+		return HashID{}
+	}
+	match := tree.bits[*nbits]
+	*nbits++
+	if h == 0 || !match {
+		if *nhash >= len(tree.vhash) {
+			tree.bad = true
+			return HashID{}
+		}
+		hash := tree.vhash[*nhash]
+		*nhash++
+		if h == 0 && match {
+			*ids = append(*ids, hash)
+			*idx = append(*idx, pos)
+		}
+		return hash
+	} else {
+		left, right := tree.extract(h-1, pos*2, nbits, nhash, ids, idx), HashID{}
+		if pos*2+1 < tree.TreeWidth(h-1) {
+			right = tree.extract(h-1, pos*2+1, nbits, nhash, ids, idx)
+			if left.Equal(right) {
+				tree.bad = true
+			}
+		} else {
+			right = left
+		}
+		return tree.Hash(left, right)
+	}
+}
+
+func (tree *MerkleTree) TreeWidth(h int) int {
+	return (tree.trans + (1 << h) - 1) >> h
+}
+
+func (tree *MerkleTree) CalcHash(h int, pos int, ids []HashID) HashID {
+	if len(ids) == 0 {
 		panic(errors.New("empty merkle array"))
 	}
 	if h == 0 {
-		return a[pos]
+		return ids[pos]
 	}
-	left, right := a.CalcHash(h-1, pos*2), []byte{}
-	if pos*2+1 < a.TreeWidth(h-1) {
-		right = a.CalcHash(h-1, pos*2+1)
+	left, right := tree.CalcHash(h-1, pos*2, ids), HashID{}
+	if pos*2+1 < tree.TreeWidth(h-1) {
+		right = tree.CalcHash(h-1, pos*2+1, ids)
 	} else {
 		right = left
 	}
-	return a.Hash(left, right)
+	return tree.Hash(left, right)
 }
 
-//func (a MerkleNodeArray) Hash() []byte {
-//	if len(a) == 1 {
-//		return a[0]
-//	}
-//	v0 := a[0]
-//	for i := 1; i < len(a); i++ {
-//		v1 := a[i]
-//		v := append([]byte{}, v0...)
-//		v = append(v, v1...)
-//		v0 = util.HASH256(v)
-//	}
-//	return v0
-//}
+func NewBitSet(d []byte) *bitset.BitSet {
+	bits := bitset.New(uint(len(d)) * 8)
+	for i := uint(0); i < bits.Len(); i++ {
+		if (d[i/8] & (1 << (i % 8))) != 0 {
+			bits.Set(i)
+		}
+	}
+	return bits
+}
 
-//type MerkleTree []MerkleNodeArray
-//
-//func (mt MerkleTree) Root() MerkleNode {
-//	l := len(mt)
-//	return mt[l-1][0]
-//}
-//
-//func (mt MerkleTree) at(i, j int) MerkleNode {
-//	if i < 0 && i >= len(mt) {
-//		panic(errors.New("i out bound"))
-//	}
-//	fs := mt[i]
-//	if j < 0 && j >= len(fs) {
-//		panic(errors.New("j out bound"))
-//	}
-//	return mt[i][j]
-//}
-//
-//func (mt MerkleTree) findPos(node MerkleNode) (int, int) {
-//	for i := 0; i < len(mt); i++ {
-//		fs := mt[i]
-//		for j := 0; j < len(fs); j++ {
-//			if bytes.Equal(node, fs[j]) {
-//				return i, j
-//			}
-//		}
-//	}
-//	return -1, -1
-//}
-//
-//func (mt MerkleTree) FindPath(node MerkleNode) MerkleNodeArray {
-//	vs := MerkleNodeArray{}
-//	i, j := mt.findPos(node)
-//	if i < 0 || j < 0 {
-//		return vs
-//	}
-//	vs = append(vs, mt.at(i, j))
-//	if i == len(mt)-1 && j == 0 {
-//		return vs
-//	}
-//	x := j
-//	for y := 0; y < len(mt)-1; y++ {
-//		if x%2 == 0 {
-//			vs = append(vs, mt.at(y, x+1))
-//		} else {
-//			vs = append(vs, mt.at(y, x-1))
-//		}
-//		x = x / 2
-//	}
-//	return vs
-//}
-//
-//func ComputeMerkleTree(tree *MerkleTree, hashs MerkleNodeArray) *MerkleTree {
-//	fvs := MerkleNodeArray{}
-//	if len(hashs) == 1 {
-//		fvs = append(fvs, hashs[0])
-//		*tree = append(*tree, fvs)
-//		return tree
-//	}
-//	if len(hashs)%2 != 0 {
-//		hashs = append(hashs, hashs[len(hashs)-1])
-//	}
-//	hvs := MerkleNodeArray{}
-//	for i := 0; i < len(hashs); i++ {
-//		fvs = append(fvs, hashs[i])
-//		if i%2 == 0 {
-//			continue
-//		}
-//		v1 := hashs[i-1]
-//		v2 := hashs[i-0]
-//		v := append([]byte{}, v1...)
-//		v = append(v, v2...)
-//		hvs = append(hvs, util.HASH256(v))
-//	}
-//	*tree = append(*tree, fvs)
-//	return ComputeMerkleTree(tree, hvs)
-//}
-//
-//func NewMerkleTree(hashs MerkleNodeArray) *MerkleTree {
-//	return ComputeMerkleTree(&MerkleTree{}, hashs)
-//}
+func FromBitSet(bs *bitset.BitSet) []byte {
+	b := make([]byte, (bs.Len()+7)/8)
+	for i := uint(0); i < bs.Len(); i++ {
+		if bs.Test(i) {
+			b[i/8] |= 1 << (i % 8)
+		}
+	}
+	return b
+}
 
 type MsgMerkleBlock struct {
 	Version    int32
@@ -141,6 +207,11 @@ type MsgMerkleBlock struct {
 	Total      uint32
 	Hashs      []HashID
 	Flags      []byte
+}
+
+func (m *MsgMerkleBlock) Extract() (HashID, []HashID, []int) {
+	tree := GetMerkleTree(int(m.Total), m.Hashs, NewBitSet(m.Flags))
+	return tree.Extract()
 }
 
 func (m *MsgMerkleBlock) Command() string {

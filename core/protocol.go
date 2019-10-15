@@ -9,6 +9,8 @@ import (
 	"io"
 	"net"
 	"time"
+
+	"github.com/dchest/siphash"
 )
 
 //core message type
@@ -101,12 +103,31 @@ var (
 	SizeError = errors.New("data size error")
 )
 
-func HASH256To(b []byte, h *HashID) {
+func HASH256To(b []byte, h *HashID) HashID {
 	copy((*h)[:], util.HASH256(b))
+	return *h
 }
 
 func HASH160To(b []byte, h []byte) {
 	copy(h, util.HASH160(b))
+}
+
+//bitcoin SipHashUint256
+func SipHash(k1, k2 uint64, hv HashID) uint64 {
+	return siphash.Hash(k1, k2, hv[:])
+}
+
+//bitcoin SipHashUint256Extra
+func SipHashExtra(k1, k2 uint64, hv HashID, extra uint32) uint64 {
+	key := make([]byte, 16)
+	ByteOrder.PutUint64(key[:8], k1)
+	ByteOrder.PutUint64(key[8:], k2)
+	hasher := siphash.New(key)
+	hasher.Write(hv[:])
+	b4 := []byte{0, 0, 0, 0}
+	ByteOrder.PutUint32(b4, extra)
+	hasher.Write(b4)
+	return hasher.Sum64()
 }
 
 type MsgIO interface {

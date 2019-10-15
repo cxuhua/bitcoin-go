@@ -72,6 +72,10 @@ func TestRunClient(t *testing.T) {
 				for _, v := range m.Headers {
 					log.Println(v.Hash, v.Count)
 				}
+			} else if cmd == core.NMT_MERKLEBLOCK {
+				m := m.(*core.MsgMerkleBlock)
+				a, b, c := m.Extract()
+				log.Println(a, b, c)
 			}
 		},
 	})

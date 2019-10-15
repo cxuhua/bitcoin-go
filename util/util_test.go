@@ -9,29 +9,9 @@ import (
 	"log"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/spaolacci/murmur3"
 )
-
-func TestGoChan(t *testing.T) {
-	c := make(chan int, 100)
-	for i := 0; i < 10; i++ {
-		go func(idx int) {
-			for {
-				select {
-				case x := <-c:
-					log.Println(idx, " -> ", x, len(c), cap(c))
-					time.Sleep(time.Second)
-				}
-			}
-		}(i)
-	}
-	for j := 0; ; j++ {
-		c <- j
-		time.Sleep(time.Millisecond * 50)
-	}
-}
 
 func TestBloomFilter(t *testing.T) {
 	seed := uint64(0xFBA4C795 + 5)

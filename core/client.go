@@ -4,6 +4,8 @@ import (
 	"bitcoin/config"
 	"bitcoin/util"
 	"context"
+	"crypto/rand"
+	"encoding/binary"
 	"fmt"
 	"log"
 	"net"
@@ -83,6 +85,8 @@ type Client struct {
 	Ping      int
 	Err       interface{}
 	FeeRate   Amount //trans fee
+	k1        uint64 //use siphash k1,k2
+	k2        uint64
 }
 
 func (c *Client) SetListener(lis *ClientListener) {
@@ -339,6 +343,14 @@ func (c *Client) Connect() error {
 	return nil
 }
 
+func (c *Client) SipHash(hv HashID) uint64 {
+	return SipHash(c.k1, c.k2, hv)
+}
+
+func (c *Client) SipHashExtra(hv HashID, extra uint32) uint64 {
+	return SipHashExtra(c.k1, c.k2, hv, extra)
+}
+
 func NewClientWithIPPort(typ ClientType, ip net.IP, port uint16) *Client {
 	c := &Client{}
 	c.connected = false
@@ -348,6 +360,11 @@ func NewClientWithIPPort(typ ClientType, ip net.IP, port uint16) *Client {
 	c.try = 3
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.listener = &defaultLister{}
+	b8 := make([]byte, 8)
+	binary.Read(rand.Reader, ByteOrder, b8)
+	c.k1 = ByteOrder.Uint64(b8)
+	binary.Read(rand.Reader, ByteOrder, b8)
+	c.k2 = ByteOrder.Uint64(b8)
 	return c
 }
 
