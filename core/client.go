@@ -246,12 +246,15 @@ func (c *Client) init() {
 	c.wc = make(chan MsgIO, 10)
 	//init read msg queue
 	c.rc = make(chan *NetHeader, 10)
+	//init siphash args
+	binary.Read(rand.Reader, ByteOrder, &c.k1)
+	binary.Read(rand.Reader, ByteOrder, &c.k2)
 }
 
 func (c *Client) run() {
 	defer c.stop()
 	c.init()
-	//connect host
+	//if need connect host
 	for c.Type == ClientTypeOut && !c.connected {
 		err := c.Connect()
 		if err != nil {
@@ -353,15 +356,13 @@ func (c *Client) SipHashExtra(hv HashID, extra uint32) uint64 {
 
 func NewClientWithIPPort(typ ClientType, ip net.IP, port uint16) *Client {
 	c := &Client{}
-	c.connected = false
+	c.connected = typ == ClientTypeIn
 	c.IP = ip
 	c.Port = port
 	c.Type = typ
 	c.try = 3
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.listener = &defaultLister{}
-	binary.Read(rand.Reader, ByteOrder, &c.k1)
-	binary.Read(rand.Reader, ByteOrder, &c.k2)
 	return c
 }
 
