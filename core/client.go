@@ -360,11 +360,8 @@ func NewClientWithIPPort(typ ClientType, ip net.IP, port uint16) *Client {
 	c.try = 3
 	c.ctx, c.cancel = context.WithCancel(context.Background())
 	c.listener = &defaultLister{}
-	b8 := make([]byte, 8)
-	binary.Read(rand.Reader, ByteOrder, b8)
-	c.k1 = ByteOrder.Uint64(b8)
-	binary.Read(rand.Reader, ByteOrder, b8)
-	c.k2 = ByteOrder.Uint64(b8)
+	binary.Read(rand.Reader, ByteOrder, &c.k1)
+	binary.Read(rand.Reader, ByteOrder, &c.k2)
 	return c
 }
 

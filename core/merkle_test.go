@@ -10,11 +10,7 @@ import (
 	"github.com/willf/bitset"
 )
 
-func TestSipHashExtra(t *testing.T) {
-
-}
-
-//ipHashUint256(0x0706050403020100ULL, 0x0F0E0D0C0B0A0908ULL, uint256S("1f1e1d1c1b1a191817161514131211100f0e0d0c0b0a09080706050403020100")), 0x7127512f72f27cceull);
+//data from bitcoin
 func TestSipHash(t *testing.T) {
 	k0 := uint64(0x0706050403020100)
 	k1 := uint64(0x0F0E0D0C0B0A0908)
