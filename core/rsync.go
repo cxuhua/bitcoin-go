@@ -3,12 +3,26 @@ package core
 import (
 	"bitcoin/config"
 	"context"
+	"fmt"
 	"log"
 	"net"
 	"sort"
 	"sync"
 	"time"
 )
+
+type IPPort struct {
+	ip   net.IP
+	port int
+}
+
+func (p IPPort) IsEnable() bool {
+	return p.ip.IsGlobalUnicast()
+}
+
+func (p IPPort) Key() string {
+	return net.JoinHostPort(p.ip.String(), fmt.Sprintf("%d", p.port))
+}
 
 type ClientMap struct {
 	mu    sync.Mutex
@@ -68,18 +82,18 @@ func (m *ClientMap) Del(c *Client) {
 }
 
 var (
-	IpChan   = make(chan net.IP, 1024)
+	IpChan   = make(chan IPPort, 1024)
 	OutIps   = &ClientMap{nodes: map[string]*Client{}}
 	InIps    = &ClientMap{nodes: map[string]*Client{}}
 	RecvAddr = make(chan *MsgAddr, 10)
 )
 
-func startconnect(ip net.IP, port int) {
+func startconnect(ip IPPort) {
 	conf := config.GetConfig()
-	if !ip.IsGlobalUnicast() {
+	if !ip.IsEnable() {
 		return
 	}
-	c := NewClientWithIPPort(ClientTypeOut, ip, uint16(port))
+	c := NewClientWithIPPort(ClientTypeOut, ip)
 	//don't connect self
 	if c.Key() == conf.GetLocalAddr() {
 		return
@@ -131,12 +145,11 @@ func processAddrs(addr *MsgAddr) {
 		if v.Service&NODE_NETWORK != 0 {
 			continue
 		}
-		startconnect(v.IpAddr, int(v.Port))
+		startconnect(IPPort{v.IpAddr, int(v.Port)})
 	}
 }
 
 func StartDispatch(ctx context.Context) {
-	conf := config.GetConfig()
 	defer func() {
 		MWG.Done()
 	}()
@@ -157,7 +170,7 @@ func StartDispatch(ctx context.Context) {
 				printStatus()
 				stimer.Reset(time.Second * 5)
 			case ip := <-IpChan:
-				startconnect(ip, conf.ListenPort)
+				startconnect(ip)
 			case <-ctx.Done():
 				log.Println("dispatch stop", ctx.Err())
 				return

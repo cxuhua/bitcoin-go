@@ -15,6 +15,7 @@ var (
 
 //run lookup
 func runlookup(conf *config.Config) {
+	//lookip
 	for _, v := range conf.Seeds {
 		ips, err := net.LookupIP(v)
 		if err != nil {
@@ -22,9 +23,13 @@ func runlookup(conf *config.Config) {
 			continue
 		}
 		for _, v := range ips {
-			IpChan <- v
+			IpChan <- IPPort{ip: v, port: conf.ListenPort}
 		}
 		log.Println("LOOKUP", v, "Count=", len(ips))
+	}
+	//fix ips
+	for _, v := range fixips {
+		IpChan <- v
 	}
 }
 

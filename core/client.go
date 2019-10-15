@@ -354,11 +354,11 @@ func (c *Client) SipHashExtra(hv HashID, extra uint32) uint64 {
 	return SipHashExtra(c.k1, c.k2, hv, extra)
 }
 
-func NewClientWithIPPort(typ ClientType, ip net.IP, port uint16) *Client {
+func NewClientWithIPPort(typ ClientType, ip IPPort) *Client {
 	c := &Client{}
 	c.connected = typ == ClientTypeIn
-	c.IP = ip
-	c.Port = port
+	c.IP = ip.ip
+	c.Port = uint16(ip.port)
 	c.Type = typ
 	c.try = 3
 	c.ctx, c.cancel = context.WithCancel(context.Background())
@@ -368,10 +368,10 @@ func NewClientWithIPPort(typ ClientType, ip net.IP, port uint16) *Client {
 
 func NewClientWithIP(typ ClientType, ip net.IP) *Client {
 	conf := config.GetConfig()
-	return NewClientWithIPPort(typ, ip, uint16(conf.ListenPort))
+	return NewClientWithIPPort(typ, IPPort{ip, conf.ListenPort})
 }
 
 func NewClient(typ ClientType, addr string) *Client {
 	ip, port := util.ParseAddr(addr)
-	return NewClientWithIPPort(typ, ip, port)
+	return NewClientWithIPPort(typ, IPPort{ip, int(port)})
 }
