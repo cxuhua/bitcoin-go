@@ -10,7 +10,7 @@ func getdata(c *core.Client, bid string) {
 	d := core.NewMsgGetData()
 	d.Invs = make([]*core.Inventory, 1)
 	d.Invs[0] = &core.Inventory{
-		Type: core.MSG_FILTERED_BLOCK,
+		Type: core.MSG_BLOCK,
 		ID:   core.NewHashID(bid),
 	}
 	core.NewMsgGetBlocks()
@@ -41,15 +41,15 @@ func TestRunClient(t *testing.T) {
 				//m.Blocks = make([]core.HashID, 1)
 				//m.Blocks[0] = core.NewHashID("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
 				//c.WriteMsg(m)
-				//d := core.NewMsgSendHeaders()
-				//c.WriteMsg(d)
+				d := core.NewMsgSendHeaders()
+				c.WriteMsg(d)
 				//getdata(c, "0000000000000000000ab3075c92925e79f4c76cf5d1de4b07e48586de777026")
 				//m := core.NewMsgGetBlocks()
 				//m.AddHashID(core.NewHashID("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"))
 				//m.Stop = core.NewHashID("000000006a625f06636b8bb6ac7b960a8d03705d1ace08b1a19da3fdcc99ddbd")
 				//c.WriteMsg(m)
 
-				getdata(c, "00000000000000000007ede626ddbf91049e77c0b079a0a0535ae736d225eacf")
+				//getdata(c, "00000000000000000009b3dac9b09273277e3c55b22eb898352bf29d566b0c5a")
 
 				//m := core.NewMsgGetHeaders()
 				//m.AddHashID(core.NewHashID("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"))
@@ -63,10 +63,12 @@ func TestRunClient(t *testing.T) {
 				//m := m.(*core.MsgGetHeaders)
 				//log.Println(m)
 			} else if cmd == core.NMT_INV {
-				//m := m.(*core.MsgINV)
-				//for _, v := range m.Invs {
-				//	log.Println(v.Type, v.ID)
-				//}
+				m := m.(*core.MsgINV)
+				for _, v := range m.Invs {
+					if v.Type != core.MSG_TX {
+						log.Println(v.Type, v.ID)
+					}
+				}
 			} else if cmd == core.NMT_HEADERS {
 				m := m.(*core.MsgHeaders)
 				for _, v := range m.Headers {

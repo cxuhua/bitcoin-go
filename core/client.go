@@ -177,7 +177,7 @@ func (c *Client) processMsg(m *NetHeader) {
 }
 
 func (c *Client) OnReady() {
-	c.WriteMsg(NewMsgPing())
+
 }
 
 func (c *Client) OnPong(msg *MsgPong) {
