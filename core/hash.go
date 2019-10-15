@@ -1,32 +1,66 @@
-package net
+package core
 
 import (
 	"bytes"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"strings"
+	"reflect"
 )
 
 const (
-	HashIDWidth = 256 / 32
+	UIHashWidth = 256 / 32
 )
 
+//bytes hash
 type HashID [32]byte
 
-type UIHash [HashIDWidth]uint32
+//unsigned int hash
+type UIHash [UIHashWidth]uint32
 
-func NewUHash(bs []byte) UIHash {
-	return NewBHash(bs).ToUHash()
+func NewUIHash(v interface{}) UIHash {
+	n := UIHash{}
+	n.SetValue(v)
+	return n
 }
 
-func NewHexUHash(s string) UIHash {
-	return NewHexBHash(s).ToUHash()
+func (h UIHash) ToDouble() float64 {
+	ret := float64(0)
+	fact := float64(1)
+	for i := 0; i < UIHashWidth; i++ {
+		ret += fact * float64(h[i])
+		fact *= 4294967296.0
+	}
+	return ret
+}
+
+func (h *UIHash) SetValue(v interface{}) {
+	*h = UIHash{}
+	switch v.(type) {
+	case uint32:
+		h[0] = v.(uint32)
+	case int32:
+		h[0] = uint32(v.(int32))
+	case uint:
+		h[0] = uint32(v.(uint))
+	case int:
+		h[0] = uint32(v.(int))
+	case int64:
+		cv := v.(int64)
+		h[0] = uint32(cv)
+		h[1] = uint32(cv >> 32)
+	case uint64:
+		cv := v.(uint64)
+		h[0] = uint32(cv)
+		h[1] = uint32(cv >> 32)
+	default:
+		*h = NewHashID(v).ToUHash()
+	}
 }
 
 func (h HashID) ToUHash() UIHash {
 	x := UIHash{}
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		x[i] = ByteOrder.Uint32(h[i*4 : i*4+4])
 	}
 	return x
@@ -43,7 +77,7 @@ func (h UIHash) IsZero() bool {
 
 func (h UIHash) String() string {
 	s := ""
-	for i := HashIDWidth - 1; i >= 0; i-- {
+	for i := UIHashWidth - 1; i >= 0; i-- {
 		b4 := []byte{0, 0, 0, 0}
 		ByteOrder.PutUint32(b4, h[i])
 		s += fmt.Sprintf("%.2x%.2x%.2x%.2x", b4[3], b4[2], b4[1], b4[0])
@@ -56,7 +90,7 @@ func (b UIHash) Low64() uint64 {
 }
 
 func (b UIHash) Bits() uint {
-	for pos := HashIDWidth - 1; pos >= 0; pos-- {
+	for pos := UIHashWidth - 1; pos >= 0; pos-- {
 		if b[pos] != 0 {
 			for bits := uint(31); bits > 0; bits-- {
 				if b[pos]&uint32(1<<bits) != 0 {
@@ -72,7 +106,7 @@ func (b UIHash) Bits() uint {
 func (h UIHash) MulUInt32(v uint32) UIHash {
 	a := UIHash{}
 	carry := uint64(0)
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		n := carry + uint64(v)*uint64(h[i])
 		a[i] = uint32(n & 0xffffffff)
 		carry = n >> 32
@@ -83,9 +117,9 @@ func (h UIHash) MulUInt32(v uint32) UIHash {
 // c = a * b
 func (h UIHash) Mul(v UIHash) UIHash {
 	a := UIHash{}
-	for j := 0; j < HashIDWidth; j++ {
+	for j := 0; j < UIHashWidth; j++ {
 		carry := uint64(0)
-		for i := 0; i+j < HashIDWidth; i++ {
+		for i := 0; i+j < UIHashWidth; i++ {
 			n := carry + uint64(a[i+j]) + uint64(h[j])*uint64(v[i])
 			a[i+j] = uint32(n & 0xffffffff)
 			carry = n >> 32
@@ -97,17 +131,17 @@ func (h UIHash) Mul(v UIHash) UIHash {
 //a = ^h
 func (h UIHash) Neg() UIHash {
 	a := UIHash{}
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		a[i] = ^h[i]
 	}
-	return a.Add(NewU64Hash(1))
+	return a.Add(NewUIHash(1))
 }
 
 // >0 =  >
 // <0 =  <
 // =0 =  =
 func (h UIHash) Cmp(b UIHash) int {
-	for i := HashIDWidth - 1; i >= 0; i-- {
+	for i := UIHashWidth - 1; i >= 0; i-- {
 		if h[i] < b[i] {
 			return -1
 		}
@@ -127,7 +161,7 @@ func (h UIHash) Sub(b UIHash) UIHash {
 func (h UIHash) Add(b UIHash) UIHash {
 	a := UIHash{}
 	carry := uint64(0)
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		n := carry + uint64(h[i]) + uint64(b[i])
 		a[i] = uint32(n & 0xffffffff)
 		carry = n >> 32
@@ -165,12 +199,12 @@ func (h UIHash) Div(b UIHash) UIHash {
 //>>
 func (b UIHash) Rshift(shift uint) UIHash {
 	x := b
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		b[i] = 0
 	}
 	k := int(shift / 32)
 	shift = shift % 32
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		if i-k-1 >= 0 && shift != 0 {
 			b[i-k-1] |= (x[i] << (32 - shift))
 		}
@@ -183,27 +217,20 @@ func (b UIHash) Rshift(shift uint) UIHash {
 
 func (b UIHash) Lshift(shift uint) UIHash {
 	x := b
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		b[i] = 0
 	}
 	k := int(shift / 32)
 	shift = shift % 32
-	for i := 0; i < HashIDWidth; i++ {
-		if i+k+1 < HashIDWidth && shift != 0 {
+	for i := 0; i < UIHashWidth; i++ {
+		if i+k+1 < UIHashWidth && shift != 0 {
 			b[i+k+1] |= (x[i] >> (32 - shift))
 		}
-		if i+k < HashIDWidth {
+		if i+k < UIHashWidth {
 			b[i+k] |= (x[i] << shift)
 		}
 	}
 	return b
-}
-
-func NewU64Hash(v uint64) UIHash {
-	r := UIHash{}
-	r[0] = uint32(v)
-	r[1] = uint32(v >> 32)
-	return r
 }
 
 //return Negative,Overflow
@@ -212,9 +239,9 @@ func (b *UIHash) SetCompact(c uint32) (bool, bool) {
 	word := c & 0x007fffff
 	if size <= 3 {
 		word >>= 8 * (3 - size)
-		*b = NewU64Hash(uint64(word))
+		*b = NewUIHash(word)
 	} else {
-		*b = NewU64Hash(uint64(word))
+		*b = NewUIHash(word)
 		*b = b.Lshift(8 * uint(size-3))
 	}
 	negative := word != 0 && (c&0x00800000) != 0
@@ -246,7 +273,7 @@ func (b UIHash) Compact(negative bool) uint32 {
 
 func (h UIHash) ToHashID() HashID {
 	x := HashID{}
-	for i := 0; i < HashIDWidth; i++ {
+	for i := 0; i < UIHashWidth; i++ {
 		b4 := []byte{0, 0, 0, 0}
 		ByteOrder.PutUint32(b4, h[i])
 		copy(x[i*4+0:i*4+4], b4)
@@ -282,26 +309,32 @@ func (b HashID) Swap() HashID {
 	return v
 }
 
-func NewBHash(bs []byte) HashID {
+func NewHashID(v interface{}) HashID {
 	b := HashID{}
-	l := len(bs)
-	if l > 32 {
-		panic(SizeError)
+	switch v.(type) {
+	case []byte:
+		bs := v.([]byte)
+		l := len(bs)
+		if l > len(b) {
+			panic(SizeError)
+		}
+		copy(b[len(b)-l:], bs)
+	case string:
+		s := v.(string)
+		if len(s) > 64 {
+			panic(SizeError)
+		}
+		if len(s)%2 != 0 {
+			s = "0" + s
+		}
+		bs, err := hex.DecodeString(s)
+		if err != nil {
+			panic(err)
+		}
+		copy(b[len(b)-len(bs):], bs)
+		b = b.Swap()
+	default:
+		panic(errors.New("v type error" + reflect.TypeOf(v).String()))
 	}
-	copy(b[32-l:], bs)
 	return b
-}
-
-func NewHexBHash(s string) HashID {
-	if len(s) > 64 {
-		panic(SizeError)
-	}
-	if len(s) < 64 {
-		s = strings.Repeat("0", 64-len(s)) + s
-	}
-	v, err := hex.DecodeString(s)
-	if err != nil {
-		panic(err)
-	}
-	return NewBHash(v).Swap()
 }

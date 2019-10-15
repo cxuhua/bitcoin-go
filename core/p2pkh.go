@@ -1,4 +1,4 @@
-package net
+package core
 
 import (
 	"bitcoin/db"
@@ -8,12 +8,12 @@ import (
 	"fmt"
 )
 
-type p2wpkhVerify struct {
+type p2pkhVerify struct {
 	baseVerify
 }
 
-func newP2WPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wpkhVerify {
-	return &p2wpkhVerify{
+func newP2PKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2pkhVerify {
+	return &p2pkhVerify{
 		baseVerify: baseVerify{
 			idx: idx,
 			in:  in,
@@ -24,8 +24,8 @@ func newP2WPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wpkh
 	}
 }
 
-func (vfy *p2wpkhVerify) Packer(sig *script.SigValue) SigPacker {
-	return &witnesSigPacker{
+func (vfy *p2pkhVerify) Packer(sig *script.SigValue) SigPacker {
+	return &baseSigPacker{
 		idx: vfy.idx,
 		in:  vfy.in,
 		out: vfy.out,
@@ -35,18 +35,11 @@ func (vfy *p2wpkhVerify) Packer(sig *script.SigValue) SigPacker {
 	}
 }
 
-func (vfy *p2wpkhVerify) SigScript() *script.Script {
-	hash := (*vfy.out.Script)[2:]
-	ns := &script.Script{}
-	ns = ns.PushOp(script.OP_DUP)
-	ns = ns.PushOp(script.OP_HASH160)
-	ns = ns.PushBytes(hash)
-	ns = ns.PushOp(script.OP_EQUALVERIFY)
-	ns = ns.PushOp(script.OP_CHECKSIG)
-	return ns
+func (vfy *p2pkhVerify) SigScript() *script.Script {
+	return vfy.out.Script
 }
 
-func (vfy *p2wpkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
+func (vfy *p2pkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
 	sig, err := script.NewSigValue(sigv)
 	if err != nil {
 		return err
@@ -66,15 +59,11 @@ func (vfy *p2wpkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte)
 	return nil
 }
 
-func (vfy *p2wpkhVerify) Verify(db db.DbImp) error {
+func (vfy *p2pkhVerify) Verify(db db.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
-	//push sig pub data
-	for _, v := range vfy.in.Witness.Script {
-		sv = sv.PushBytes(*v)
-	}
-	sv.Concat(vfy.SigScript())
-	//run script checksig
+	sv = sv.Concat(vfy.in.Script)
+	sv = sv.Concat(vfy.out.Script)
 	if err := sv.Eval(stack, vfy); err != nil {
 		return err
 	}

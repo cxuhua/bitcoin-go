@@ -1,4 +1,4 @@
-package net
+package core
 
 import (
 	"bitcoin/db"
@@ -33,6 +33,29 @@ type BHeader struct {
 	Hash      HashID
 }
 
+/*
+	Hash      []byte `bson:"_id"`
+	Ver       uint32 `bson:"ver"`
+	Prev      []byte `bson:"prev"`
+	Merkle    []byte `bson:"merkel"`
+	Timestamp uint32 `bson:"time"`
+	Bits      uint32 `bson:"bits"`
+	Nonce     uint32 `bson:"nonce"`
+	Height    uint64 `bson:"height"`
+	Count     int    `bson:"count"` //tx count
+*/
+func (m *BHeader) ToBlockHeader() *BlockHeader {
+	bh := NewBlockHeader()
+	copy(bh.Hash, m.Hash[:])
+	bh.Ver = m.Ver
+	copy(bh.Prev, m.Prev[:])
+	copy(bh.Merkle, m.Merkle[:])
+	bh.Timestamp = m.Timestamp
+	bh.Nonce = m.Nonce
+	bh.Count = int(m.Count)
+	return bh
+}
+
 func (m *BHeader) Read(h *NetHeader) {
 	sp := h.Pos()
 	m.Ver = h.ReadUInt32()
@@ -43,6 +66,7 @@ func (m *BHeader) Read(h *NetHeader) {
 	m.Nonce = h.ReadUInt32()
 	ep := h.Pos()
 	HASH256To(h.SubBytes(sp, ep), &m.Hash)
+	//always 0
 	m.Count, _ = h.ReadVarInt()
 }
 
@@ -431,37 +455,6 @@ func (m *TX) SetHasWitness(v bool) {
 	}
 }
 
-/*
-	anyone := ht&script.SIGHASH_ANYONECANPAY != 0
-	single := (ht & 0x1f) == script.SIGHASH_SINGLE
-	none := (ht & 0x1f) == script.SIGHASH_NONE
-*/
-
-func (m *TxIn) WriteSig(h *NetHeader, ht byte, ver script.SigVersion) {
-
-	h.WriteBytes(m.OutHash[:])
-	h.WriteUInt32(m.OutIndex)
-	h.WriteScript(m.Script)
-	h.WriteUInt32(m.Sequence)
-}
-
-func (m *TX) WriteSig(h *NetHeader, ht byte, ver script.SigVersion) {
-	h.WriteUInt32(uint32(m.Ver))
-	ic := len(m.Ins)
-	if ht&script.SIGHASH_ANYONECANPAY != 0 {
-		ic = 1
-	}
-	h.WriteVarInt(ic)
-	for i := 0; i < ic; i++ {
-		m.Ins[i].WriteSig(h, ht, ver)
-	}
-	h.WriteVarInt(len(m.Outs))
-	for _, v := range m.Outs {
-		v.Write(h)
-	}
-	h.WriteUInt32(m.LockTime)
-}
-
 func (m *TX) Write(h *NetHeader) {
 	buf := bytes.Buffer{}
 	m.bbpos = h.Pos()
@@ -629,6 +622,14 @@ type BlockHeader struct {
 	Count     int    `bson:"count"` //tx count
 }
 
+func NewBlockHeader() *BlockHeader {
+	bh := &BlockHeader{}
+	bh.Hash = make([]byte, len(HashID{}))
+	bh.Prev = make([]byte, len(HashID{}))
+	bh.Merkle = make([]byte, len(HashID{}))
+	return bh
+}
+
 func (b *BlockHeader) ToBlock() *MsgBlock {
 	m := &MsgBlock{}
 	copy(m.Hash[:], b.Hash)
@@ -736,8 +737,8 @@ func (m *MsgBlock) Write(h *NetHeader) {
 	m.Count = len(m.Txs)
 }
 
-func (m *MsgBlock) MarkleNodes() script.MerkleNodeArray {
-	nodes := script.MerkleNodeArray{}
+func (m *MsgBlock) MarkleNodes() MerkleArray {
+	nodes := MerkleArray{}
 	for _, v := range m.Txs {
 		nodes = append(nodes, v.Hash[:])
 	}
@@ -746,9 +747,9 @@ func (m *MsgBlock) MarkleNodes() script.MerkleNodeArray {
 
 func (m *MsgBlock) MarkleId() HashID {
 	ret := HashID{}
-	nodes := m.MarkleNodes()
-	tree := script.NewMerkleTree(nodes)
-	copy(ret[:], tree.Root())
+	//nodes := m.MarkleNodes()
+	//tree := script.NewMerkleTree(nodes)
+	//copy(ret[:], tree.Root())
 	return ret
 }
 

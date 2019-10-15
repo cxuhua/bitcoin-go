@@ -1,4 +1,4 @@
-package net
+package core
 
 import (
 	"bitcoin/config"
@@ -18,7 +18,7 @@ func CheckProofOfWork(hash HashID, bits uint32, conf *config.Config) bool {
 	if o {
 		return false
 	}
-	limit := NewHexUHash(conf.PowLimit)
+	limit := NewUIHash(conf.PowLimit)
 	if h.Cmp(limit) > 0 {
 		return false
 	}
@@ -31,7 +31,7 @@ func CheckProofOfWork(hash HashID, bits uint32, conf *config.Config) bool {
 //pw = lastBlock's bits
 func CalculateWorkRequired(ct uint32, pt uint32, pw uint32, conf *config.Config) uint32 {
 	span := uint32(conf.PowTargetTimespan)
-	limit := NewHexUHash(conf.PowLimit)
+	limit := NewUIHash(conf.PowLimit)
 	sub := ct - pt
 	if sub <= 0 {
 		panic(errors.New("ct pt error"))
@@ -45,7 +45,7 @@ func CalculateWorkRequired(ct uint32, pt uint32, pw uint32, conf *config.Config)
 	n := UIHash{}
 	n.SetCompact(pw)
 	n = n.MulUInt32(sub)
-	n = n.Div(NewU64Hash(uint64(span)))
+	n = n.Div(NewUIHash(span))
 	if n.Cmp(limit) > 0 {
 		n = limit
 	}

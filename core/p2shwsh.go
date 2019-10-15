@@ -1,22 +1,25 @@
-package net
+package core
 
 import (
 	"bitcoin/db"
 	"bitcoin/script"
 	"bitcoin/util"
-	"bytes"
 	"errors"
 	"fmt"
 )
 
-type p2wshMSIGVerify struct {
+type p2shwshVerify struct {
 	hsidx int
+	less  int
+	size  int
 	baseVerify
 }
 
-func newP2WSHMSIGVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wshMSIGVerify {
-	return &p2wshMSIGVerify{
+func newP2SHWSHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2shwshVerify {
+	return &p2shwshVerify{
 		hsidx: -1,
+		less:  -1,
+		size:  -1,
 		baseVerify: baseVerify{
 			idx: idx,
 			in:  in,
@@ -27,7 +30,7 @@ func newP2WSHMSIGVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2w
 	}
 }
 
-func (vfy *p2wshMSIGVerify) Packer(sig *script.SigValue) SigPacker {
+func (vfy *p2shwshVerify) Packer(sig *script.SigValue) SigPacker {
 	return &witnesSigPacker{
 		idx: vfy.idx,
 		in:  vfy.in,
@@ -38,11 +41,11 @@ func (vfy *p2wshMSIGVerify) Packer(sig *script.SigValue) SigPacker {
 	}
 }
 
-func (vfy *p2wshMSIGVerify) SigScript() *script.Script {
+func (vfy *p2shwshVerify) SigScript() *script.Script {
 	return vfy.in.Witness.Script[vfy.hsidx]
 }
 
-func (vfy *p2wshMSIGVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
+func (vfy *p2shwshVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte) error {
 	sig, err := script.NewSigValue(sigv)
 	if err != nil {
 		return err
@@ -62,16 +65,21 @@ func (vfy *p2wshMSIGVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []by
 	return nil
 }
 
-func (vfy *p2wshMSIGVerify) checkPublicHash() bool {
-	sc := vfy.in.Witness.Script[vfy.hsidx]
-	hv1 := util.SHA256(*sc)
-	hv2 := (*vfy.out.Script)[2:]
-	return bytes.Equal(hv1, hv2)
-}
-
-func (vfy *p2wshMSIGVerify) Verify(db db.DbImp) error {
+func (vfy *p2shwshVerify) Verify(db db.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
+	//hash equal check
+	sv.Concat(vfy.in.Script)
+	sv.Concat(vfy.out.Script)
+	if err := sv.Eval(stack, vfy); err != nil {
+		return err
+	}
+	if !script.StackTopBool(stack, -1) {
+		return errors.New("hash equal error")
+	}
+	stack.Pop()
+	sv.Clean()
+	//multisig check
 	vfy.hsidx = -1
 	for i, v := range vfy.in.Witness.Script {
 		if v.Len() == 0 {
@@ -82,9 +90,6 @@ func (vfy *p2wshMSIGVerify) Verify(db db.DbImp) error {
 		} else {
 			sv.PushBytes(*v)
 		}
-	}
-	if vfy.hsidx < 0 || !vfy.checkPublicHash() {
-		return errors.New("check public hash error")
 	}
 	if err := sv.Eval(stack, vfy); err != nil {
 		return err

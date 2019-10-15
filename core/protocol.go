@@ -1,4 +1,4 @@
-package net
+package core
 
 import (
 	"bitcoin/config"
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-//net message type
+//core message type
 //https://en.bitcoin.it/wiki/Protocol_documentation#Network_address
 const (
 	NMT_VERSION     = "version"

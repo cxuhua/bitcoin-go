@@ -1,4 +1,4 @@
-package net
+package core
 
 import (
 	"bitcoin/db"
@@ -172,7 +172,7 @@ func TestTXWithWitness(t *testing.T) {
 }
 
 func TestBlockData(t *testing.T) {
-	blockId := NewHexBHash("0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff")
+	blockId := NewHashID("0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff")
 
 	data, err := ioutil.ReadFile("../dat/block.dat")
 	if err != nil {

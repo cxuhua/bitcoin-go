@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bitcoin/net"
+	"bitcoin/core"
 	"context"
 	"log"
 	"os"
@@ -13,16 +13,16 @@ func main() {
 	csig := make(chan os.Signal)
 	ctx, cancel := context.WithCancel(context.Background())
 	//startup lookup
-	go net.StartLookUp(ctx)
+	go core.StartLookUp(ctx)
 	//startup block sync
-	go net.StartDispatch(ctx)
+	go core.StartDispatch(ctx)
 	//start worker
-	go net.StartWorker(ctx, 4)
+	go core.StartWorker(ctx, 4)
 	//wait quit
 	signal.Notify(csig, syscall.SIGKILL, syscall.SIGTERM, syscall.SIGINT)
 	sig := <-csig
 	log.Println("recv sig :", sig, ",system wait exit")
 	cancel()
-	net.MWG.Wait()
+	core.MWG.Wait()
 	log.Println("recv sig :", sig, ",system exited")
 }

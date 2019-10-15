@@ -1,4 +1,4 @@
-package net
+package core
 
 type MsgReject struct {
 	Message string

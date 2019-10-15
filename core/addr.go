@@ -1,4 +1,4 @@
-package net
+package core
 
 type MsgSendCmpct struct {
 	Inter uint8
