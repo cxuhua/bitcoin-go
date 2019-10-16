@@ -1,7 +1,8 @@
-package db
+package store
 
 import (
 	"context"
+	"encoding/binary"
 	"sync"
 
 	"go.mongodb.org/mongo-driver/mongo"
@@ -9,10 +10,30 @@ import (
 )
 
 var (
-	client   *mongo.Client = nil
-	dbonce                 = sync.Once{}
-	NewestBK               = []byte{0} //use GetBK method
+	client      *mongo.Client = nil
+	dbonce                    = sync.Once{}
+	NewestBK                  = []byte{0} //use GetBK method
+	UseBKHeight               = []byte{1} //1-8bytes height=9 byte LittleEndian
 )
+
+func IsNewestBK(id []byte) bool {
+	return len(id) == 1 && id[0] == 0
+}
+
+func IsBKHeight(id []byte) (uint64, bool) {
+	if len(id) == 9 && id[0] == 1 {
+		v := binary.LittleEndian.Uint64(id[1:])
+		return v, true
+	}
+	return 0, false
+}
+
+func BKHeight(h uint64) []byte {
+	b := make([]byte, 9)
+	b[0] = 1
+	binary.LittleEndian.PutUint64(b[1:], h)
+	return b
+}
 
 type mongoDBImp struct {
 	context.Context

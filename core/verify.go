@@ -1,8 +1,8 @@
 package core
 
 import (
-	"bitcoin/db"
 	"bitcoin/script"
+	"bitcoin/store"
 	"errors"
 	"fmt"
 )
@@ -15,7 +15,7 @@ var (
 
 type Verifyer interface {
 	//check sig
-	Verify(db db.DbImp) error
+	Verify(db store.DbImp) error
 	//sig data packer
 	Packer(sig *script.SigValue) SigPacker
 }
@@ -129,7 +129,7 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	return TX_UNKNOW
 }
 
-func VerifyTX(tx *TX, db db.DbImp) error {
+func VerifyTX(tx *TX, db store.DbImp) error {
 	if tx == nil {
 		return errors.New("args nil")
 	}

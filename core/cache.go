@@ -1,7 +1,7 @@
 package core
 
 import (
-	"bitcoin/db"
+	"bitcoin/store"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -93,7 +93,7 @@ func (c *networkCache) Set(id []byte, v interface{}) error {
 	return nil
 }
 
-func NewMemoryCacher(max int, timeout time.Duration) db.DbCacher {
+func NewMemoryCacher(max int, timeout time.Duration) store.DbCacher {
 	return &memoryCacher{
 		txs:     map[string]*memoryElement{},
 		max:     max,
@@ -148,11 +148,11 @@ func (c *memoryCacher) Get(id []byte) (interface{}, error) {
 	key := hex.EncodeToString(id)
 	ele, ok := c.txs[key]
 	if !ok {
-		return nil, db.ErrNotFound
+		return nil, store.ErrNotFound
 	}
 	if time.Now().Sub(ele.tv) >= c.timeout {
 		delete(c.txs, key)
-		return nil, db.ErrNotFound
+		return nil, store.ErrNotFound
 	}
 	ele.tv = time.Now()
 	return ele.value, nil
@@ -166,7 +166,7 @@ func (c *memoryCacher) Set(id []byte, v interface{}) error {
 		c.clean()
 	}
 	if len(c.txs) >= c.max {
-		return db.ErrCacherFull
+		return store.ErrCacherFull
 	}
 	ele, ok := c.txs[key]
 	if ok {

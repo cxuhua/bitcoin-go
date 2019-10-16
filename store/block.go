@@ -1,8 +1,6 @@
-package db
+package store
 
 import (
-	"bytes"
-
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -33,10 +31,15 @@ func (m *mongoDBImp) lastBK(v interface{}) error {
 }
 
 func (m *mongoDBImp) GetBK(id []byte, v interface{}) error {
-	if bytes.Equal(NewestBK, id) {
+	cond := bson.M{}
+	if IsNewestBK(id) {
 		return m.lastBK(v)
+	} else if hv, ok := IsBKHeight(id); ok {
+		cond["height"] = hv
+	} else {
+		cond["_id"] = id
 	}
-	ret := m.blocks().FindOne(m, bson.M{"_id": id})
+	ret := m.blocks().FindOne(m, cond)
 	if err := ret.Err(); err != nil {
 		return err
 	}

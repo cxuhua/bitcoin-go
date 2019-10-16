@@ -328,7 +328,12 @@ func processAddrs(addr *MsgAddr) {
 	}
 }
 
+const (
+	NoticeSaveHeadersOK = 1
+)
+
 var (
+	Notice = make(chan int, 10)
 	Blocks = NewBlockHeaderList()
 )
 
@@ -367,6 +372,11 @@ func StartDispatch(ctx context.Context) {
 		stimer := time.NewTimer(time.Second * 10)
 		for {
 			select {
+			case v := <-Notice:
+				switch v {
+				case NoticeSaveHeadersOK:
+					stimer.Reset(time.Millisecond * 50)
+				}
 			case addrs := <-RecvAddr:
 				processAddrs(addrs)
 			case <-stimer.C:

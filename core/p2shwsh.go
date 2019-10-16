@@ -1,8 +1,8 @@
 package core
 
 import (
-	"bitcoin/db"
 	"bitcoin/script"
+	"bitcoin/store"
 	"bitcoin/util"
 	"errors"
 	"fmt"
@@ -65,7 +65,7 @@ func (vfy *p2shwshVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte
 	return nil
 }
 
-func (vfy *p2shwshVerify) Verify(db db.DbImp) error {
+func (vfy *p2shwshVerify) Verify(db store.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	//hash equal check

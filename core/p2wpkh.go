@@ -1,8 +1,8 @@
 package core
 
 import (
-	"bitcoin/db"
 	"bitcoin/script"
+	"bitcoin/store"
 	"bitcoin/util"
 	"errors"
 	"fmt"
@@ -66,7 +66,7 @@ func (vfy *p2wpkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte)
 	return nil
 }
 
-func (vfy *p2wpkhVerify) Verify(db db.DbImp) error {
+func (vfy *p2wpkhVerify) Verify(db store.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	//push sig pub data

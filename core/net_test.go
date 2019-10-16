@@ -1,8 +1,8 @@
 package core
 
 import (
-	"bitcoin/db"
 	"bitcoin/script"
+	"bitcoin/store"
 	"bitcoin/util"
 	"bytes"
 	"context"
@@ -54,7 +54,7 @@ func TestSaveTX(t *testing.T) {
 	tx := &TX{}
 	tx.Read(h)
 	log.Println(tx.Hash, "save")
-	err := db.UseSession(context.Background(), func(db db.DbImp) error {
+	err := store.UseSession(context.Background(), func(db store.DbImp) error {
 		err := tx.Save(db)
 		if err != nil {
 			return err

@@ -1,4 +1,4 @@
-package db
+package store
 
 import (
 	"go.mongodb.org/mongo-driver/bson"

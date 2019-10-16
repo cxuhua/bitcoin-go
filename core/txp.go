@@ -1,8 +1,8 @@
 package core
 
 import (
-	"bitcoin/db"
 	"bitcoin/script"
+	"bitcoin/store"
 	"bytes"
 	"errors"
 )
@@ -231,7 +231,7 @@ func (txh *TXHeader) ToTX() *TX {
 	return tx
 }
 
-func LoadTX(id HashID, d db.DbImp) (*TX, error) {
+func LoadTX(id HashID, d store.DbImp) (*TX, error) {
 	//from cache get
 	if v, err := d.TXCacher().Get(id[:]); err == nil {
 		return v.(*TX), nil
@@ -258,7 +258,7 @@ func NewTXFrom(tx *TX) *TXHeader {
 	return txh
 }
 
-func (m *TX) Save(d db.DbImp) error {
+func (m *TX) Save(d store.DbImp) error {
 	h := NewTXFrom(m)
 	return d.SetTX(m.Hash[:], h)
 }
@@ -659,7 +659,7 @@ func (m *MsgBlock) ToBlockHeader() *BlockHeader {
 }
 
 //load txs from database
-func (m *MsgBlock) LoadTXS(db db.DbImp) error {
+func (m *MsgBlock) LoadTXS(db store.DbImp) error {
 	vs := make([]interface{}, m.Count)
 	for i, _ := range vs {
 		vs[i] = &TXHeader{}
@@ -674,11 +674,11 @@ func (m *MsgBlock) LoadTXS(db db.DbImp) error {
 	}
 	return nil
 }
-func (m *MsgBlock) PrevBlock(db db.DbImp) (*MsgBlock, error) {
+func (m *MsgBlock) PrevBlock(db store.DbImp) (*MsgBlock, error) {
 	return LoadBlock(m.Prev, db)
 }
 
-func (m *MsgBlock) SaveTXS(db db.DbImp) error {
+func (m *MsgBlock) SaveTXS(db store.DbImp) error {
 	vs := make([]interface{}, len(m.Txs))
 	for i, v := range m.Txs {
 		vs[i] = NewTXFrom(v)
@@ -686,7 +686,7 @@ func (m *MsgBlock) SaveTXS(db db.DbImp) error {
 	return db.MulTX(vs)
 }
 
-func (m *MsgBlock) Save(db db.DbImp) error {
+func (m *MsgBlock) Save(db store.DbImp) error {
 	b := &BlockHeader{}
 	b.Hash = m.Hash[:]
 	b.Ver = m.Ver
@@ -699,7 +699,7 @@ func (m *MsgBlock) Save(db db.DbImp) error {
 	return db.SetBK(b.Hash[:], b)
 }
 
-func LoadBlock(id HashID, db db.DbImp) (*MsgBlock, error) {
+func LoadBlock(id HashID, db store.DbImp) (*MsgBlock, error) {
 	h := &BlockHeader{}
 	if err := db.GetBK(id[:], h); err != nil {
 		return nil, err

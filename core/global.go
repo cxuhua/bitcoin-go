@@ -1,7 +1,7 @@
 package core
 
 import (
-	"bitcoin/db"
+	"bitcoin/store"
 	"sync"
 )
 
@@ -22,9 +22,9 @@ func (g *Global) SetLastBlock(v *BlockHeader) {
 	g.lnblock = v
 }
 
-func (g *Global) Init(d db.DbImp) error {
+func (g *Global) Init(db store.DbImp) error {
 	bh := &BlockHeader{}
-	if err := d.GetBK(db.NewestBK, bh); err == nil {
+	if err := db.GetBK(store.NewestBK, bh); err == nil {
 		g.lnblock = bh
 	}
 	return nil

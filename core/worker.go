@@ -1,7 +1,7 @@
 package core
 
 import (
-	"bitcoin/db"
+	"bitcoin/store"
 	"bytes"
 	"container/list"
 	"context"
@@ -84,7 +84,7 @@ var (
 	WorkerQueue = make(chan *WorkerUnit, WorkerQueueSize)
 )
 
-func processBlock(wid int, db db.DbImp, c *Client, m *MsgBlock) error {
+func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
 	log.Println("Work id", wid, "recv block:", m.Hash)
 	bh := m.ToBlockHeader()
 	if err := db.SetBK(bh.Hash, bh); err != nil {
@@ -94,12 +94,12 @@ func processBlock(wid int, db db.DbImp, c *Client, m *MsgBlock) error {
 	return nil
 }
 
-func processTX(wid int, db db.DbImp, c *Client, m *MsgTX) error {
+func processTX(wid int, db store.DbImp, c *Client, m *MsgTX) error {
 	//log.Println("Work id", wid, "recv tx")
 	return nil
 }
 
-func processHeaders(wid int, db db.DbImp, c *Client, m *MsgHeaders) error {
+func processHeaders(wid int, db store.DbImp, c *Client, m *MsgHeaders) error {
 	for _, v := range m.Headers {
 		lb := G.LastBlock()
 		bh := v.ToBlockHeader()
@@ -113,22 +113,25 @@ func processHeaders(wid int, db db.DbImp, c *Client, m *MsgHeaders) error {
 		G.SetLastBlock(bh)
 		log.Println("save blockheader", NewHashID(bh.Hash), bh.Height)
 	}
+	if len(m.Headers) > 0 {
+		Notice <- NoticeSaveHeadersOK
+	}
 	return nil
 }
 
-func processInv(wid int, db db.DbImp, c *Client, m *MsgINV) error {
+func processInv(wid int, db store.DbImp, c *Client, m *MsgINV) error {
 	//log.Println("Work id", wid, "recv inv")
 	return nil
 }
 
-func processGetHeaders(wid int, db db.DbImp, c *Client, m *MsgGetHeaders) error {
+func processGetHeaders(wid int, db store.DbImp, c *Client, m *MsgGetHeaders) error {
 	//log.Println("Work id", wid, "recv headers")
 	return nil
 }
 
 func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
 	defer wg.Done()
-	mfx := func(db db.DbImp) error {
+	mfx := func(db store.DbImp) error {
 		log.Println("start worker unit", i)
 		defer func() {
 			if err := recover(); err != nil {
@@ -162,10 +165,10 @@ func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
 	}
 	for {
 		time.Sleep(time.Second * 3)
-		err := db.UseSession(ctx, func(db db.DbImp) error {
+		err := store.UseSession(ctx, func(db store.DbImp) error {
 			return mfx(db)
 		})
-		log.Println("db session end, return err:", err)
+		log.Println("store session end, return err:", err)
 		if errors.Is(context.Canceled, err) {
 			return
 		}

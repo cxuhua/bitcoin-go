@@ -1,8 +1,8 @@
 package core
 
 import (
-	"bitcoin/db"
 	"bitcoin/script"
+	"bitcoin/store"
 	"bitcoin/util"
 	"bytes"
 	"errors"
@@ -69,7 +69,7 @@ func (vfy *p2wshMSIGVerify) checkPublicHash() bool {
 	return bytes.Equal(hv1, hv2)
 }
 
-func (vfy *p2wshMSIGVerify) Verify(db db.DbImp) error {
+func (vfy *p2wshMSIGVerify) Verify(db store.DbImp) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	vfy.hsidx = -1
