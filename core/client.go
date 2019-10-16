@@ -204,8 +204,8 @@ func (c *Client) GetAddr() string {
 func (c *Client) OnConnected() {
 	if c.Type == ClientTypeOut {
 		OutIps.Set(c)
-		addr := c.Conn.LocalAddr()
-		mp := NewMsgVersion(addr.String(), c.GetAddr())
+		addr := config.GetConfig().GetLocalAddr()
+		mp := NewMsgVersion(addr, c.GetAddr())
 		c.WriteMsg(mp)
 	} else if c.Type == ClientTypeIn {
 		InIps.Set(c)
@@ -248,6 +248,7 @@ func (c *Client) init() {
 	c.rc = make(chan *NetHeader, 10)
 	//init siphash args
 	binary.Read(rand.Reader, ByteOrder, &c.k1)
+	//
 	binary.Read(rand.Reader, ByteOrder, &c.k2)
 }
 

@@ -24,9 +24,22 @@ func (p IPPort) Key() string {
 	return net.JoinHostPort(p.ip.String(), fmt.Sprintf("%d", p.port))
 }
 
+type AddrMap struct {
+	mu  sync.Mutex
+	ips map[string]int64
+}
+
+func NewAddrMap() *AddrMap {
+	return &AddrMap{ips: map[string]int64{}}
+}
+
 type ClientMap struct {
 	mu    sync.Mutex
 	nodes map[string]*Client
+}
+
+func NewClientMap() *ClientMap {
+	return &ClientMap{nodes: map[string]*Client{}}
 }
 
 //find Fastest networdk
@@ -83,8 +96,8 @@ func (m *ClientMap) Del(c *Client) {
 
 var (
 	IpChan   = make(chan IPPort, 1024)
-	OutIps   = &ClientMap{nodes: map[string]*Client{}}
-	InIps    = &ClientMap{nodes: map[string]*Client{}}
+	OutIps   = NewClientMap()
+	InIps    = NewClientMap()
 	RecvAddr = make(chan *MsgAddr, 10)
 )
 
