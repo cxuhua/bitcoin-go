@@ -1,6 +1,8 @@
 package core
 
 import (
+	"bytes"
+	"encoding/binary"
 	"errors"
 
 	"github.com/willf/bitset"
@@ -177,24 +179,33 @@ func (tree *MerkleTree) CalcHash(h int, pos int, ids []HashID) HashID {
 	return tree.Hash(left, right)
 }
 
+func init() {
+	//set bitset endian
+	bitset.LittleEndian()
+}
+
 func NewBitSet(d []byte) *bitset.BitSet {
-	bits := bitset.New(uint(len(d)) * 8)
-	for i := uint(0); i < bits.Len(); i++ {
-		if (d[i/8] & (1 << (i % 8))) != 0 {
-			bits.Set(i)
-		}
-	}
+	bl := uint(len(d) * 8)
+	bits := bitset.New(bl)
+	buf := &bytes.Buffer{}
+	binary.Write(buf, ByteOrder, uint64(bl))
+	nl := ((len(d) + 7) / 8) * 8
+	nb := make([]byte, nl)
+	copy(nb, d)
+	binary.Write(buf, ByteOrder, nb)
+	bits.ReadFrom(buf)
 	return bits
 }
 
 func FromBitSet(bs *bitset.BitSet) []byte {
-	b := make([]byte, (bs.Len()+7)/8)
-	for i := uint(0); i < bs.Len(); i++ {
-		if bs.Test(i) {
-			b[i/8] |= 1 << (i % 8)
-		}
-	}
-	return b
+	buf := &bytes.Buffer{}
+	bs.WriteTo(buf)
+	bl := uint64(0)
+	binary.Read(buf, ByteOrder, &bl)
+	bl = (bl + 7) / 8
+	bb := make([]byte, bl)
+	binary.Read(buf, ByteOrder, bb)
+	return bb
 }
 
 type MsgMerkleBlock struct {

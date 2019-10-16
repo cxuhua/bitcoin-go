@@ -52,6 +52,7 @@ func (m *BHeader) ToBlockHeader() *BlockHeader {
 	copy(bh.Merkle, m.Merkle[:])
 	bh.Timestamp = m.Timestamp
 	bh.Nonce = m.Nonce
+	bh.Bits = m.Bits
 	bh.Count = int(m.Count)
 	return bh
 }
@@ -643,6 +644,20 @@ func (b *BlockHeader) ToBlock() *MsgBlock {
 	return m
 }
 
+func (m *MsgBlock) ToBlockHeader() *BlockHeader {
+	h := NewBlockHeader()
+	copy(h.Hash, m.Hash[:])
+	h.Ver = m.Ver
+	copy(h.Prev, m.Prev[:])
+	copy(h.Merkle, m.Merkle[:])
+	h.Timestamp = m.Timestamp
+	h.Bits = m.Bits
+	h.Nonce = m.Nonce
+	h.Height = 0
+	h.Count = len(m.Txs)
+	return h
+}
+
 //load txs from database
 func (m *MsgBlock) LoadTXS(db db.DbImp) error {
 	vs := make([]interface{}, m.Count)
@@ -755,7 +770,7 @@ func NewMsgBlock() *MsgBlock {
 
 //
 type MsgGetData struct {
-	Invs []*Inventory
+	Invs []Inventory
 }
 
 func (m *MsgGetData) Command() string {
@@ -764,14 +779,12 @@ func (m *MsgGetData) Command() string {
 
 func (m *MsgGetData) Read(h *NetHeader) {
 	num, _ := h.ReadVarInt()
-	m.Invs = make([]*Inventory, num)
+	m.Invs = make([]Inventory, num)
 	for i, _ := range m.Invs {
-		v := &Inventory{}
-		v.Read(h)
-		m.Invs[i] = v
+		m.Invs[i].Read(h)
 	}
 }
-func (m *MsgGetData) Add(inv *Inventory) {
+func (m *MsgGetData) Add(inv Inventory) {
 	m.Invs = append(m.Invs, inv)
 }
 
@@ -784,7 +797,7 @@ func (m *MsgGetData) Write(h *NetHeader) {
 
 func NewMsgGetData() *MsgGetData {
 	return &MsgGetData{
-		Invs: []*Inventory{},
+		Invs: []Inventory{},
 	}
 }
 
@@ -852,6 +865,10 @@ func (m *MsgGetHeaders) Command() string {
 
 func (m *MsgGetHeaders) AddHashID(hv HashID) {
 	m.Blocks = append(m.Blocks, hv)
+}
+
+func (m *MsgGetHeaders) AddHash(hv []byte) {
+	m.Blocks = append(m.Blocks, NewHashID(hv))
 }
 
 func (m *MsgGetHeaders) Read(h *NetHeader) {

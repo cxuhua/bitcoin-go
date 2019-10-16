@@ -293,6 +293,21 @@ func (m *MsgBuffer) WriteInt32(v int32) {
 	}
 }
 
+//6 byte
+func (m *MsgBuffer) WriteShortId(v uint64) {
+	lsb := uint32(v & 0xffffffff)
+	msb := uint16((v >> 32) & 0xffff)
+	m.WriteUInt32(lsb)
+	m.WriteUInt16(msb)
+}
+
+//6 byte short id
+func (m *MsgBuffer) ReadShortId() uint64 {
+	lsb := m.ReadUInt32()
+	msb := m.ReadUInt16()
+	return (uint64(msb) << 32) | uint64(lsb)
+}
+
 func (m *MsgBuffer) ReadUInt64() uint64 {
 	v := uint64(0)
 	err := binary.Read(m, ByteOrder, &v)

@@ -296,12 +296,11 @@ func GetAddressSize() int {
 	return 4 + 8 + 16 + 2
 }
 
-func NewAddress(s uint64, addr string) *Address {
-	ip, port := util.ParseAddr(addr)
-	return &Address{
+func NewAddress(s uint64, ip IPPort) Address {
+	return Address{
 		Service: s,
-		IpAddr:  ip,
-		Port:    port,
+		IpAddr:  ip.ip,
+		Port:    uint16(ip.port),
 	}
 }
 
@@ -329,8 +328,8 @@ type MsgVersion struct {
 	Ver       uint32 //PROTOCOL_VERSION
 	Service   uint64 //1
 	Timestamp uint64
-	SAddr     *Address
-	DAddr     *Address
+	SAddr     Address
+	DAddr     Address
 	Nonce     uint64
 	SubVer    string
 	Height    uint32
@@ -342,21 +341,15 @@ func (m *MsgVersion) Command() string {
 }
 
 func (m *MsgVersion) Read(h *NetHeader) {
-	m.SAddr = NewAddress(0, "0.0.0.0:0")
-	m.DAddr = NewAddress(0, "0.0.0.0:0")
 	m.Ver = h.ReadUInt32()
 	m.Service = h.ReadUInt64()
 	m.Timestamp = h.ReadUInt64()
 	m.SAddr.Read(h, false)
-	if m.Ver >= 106 {
-		m.DAddr.Read(h, false)
-		m.Nonce = h.ReadUInt64()
-		m.SubVer = h.ReadString()
-		m.Height = h.ReadUInt32()
-	}
-	if m.Ver >= 70001 {
-		m.Relay = h.ReadUint8()
-	}
+	m.DAddr.Read(h, false)
+	m.Nonce = h.ReadUInt64()
+	m.SubVer = h.ReadString()
+	m.Height = h.ReadUInt32()
+	m.Relay = h.ReadUint8()
 }
 
 func (m *MsgVersion) Write(h *NetHeader) {
@@ -364,18 +357,14 @@ func (m *MsgVersion) Write(h *NetHeader) {
 	h.WriteUInt64(m.Service)
 	h.WriteUInt64(m.Timestamp)
 	m.SAddr.Write(h, false)
-	if m.Ver >= 106 {
-		m.DAddr.Write(h, false)
-		h.WriteUInt64(m.Nonce)
-		h.WriteString(m.SubVer)
-		h.WriteUInt32(m.Height)
-	}
-	if m.Ver >= 70001 {
-		h.WriteUint8(m.Relay)
-	}
+	m.DAddr.Write(h, false)
+	h.WriteUInt64(m.Nonce)
+	h.WriteString(m.SubVer)
+	h.WriteUInt32(m.Height)
+	h.WriteUint8(m.Relay)
 }
 
-func NewMsgVersion(sip string, dip string) *MsgVersion {
+func NewMsgVersion(sip IPPort, dip IPPort) *MsgVersion {
 	conf := config.GetConfig()
 	m := &MsgVersion{}
 	m.Ver = PROTOCOL_VERSION
@@ -383,7 +372,7 @@ func NewMsgVersion(sip string, dip string) *MsgVersion {
 	m.Timestamp = uint64(time.Now().Unix())
 	m.SAddr = NewAddress(SERVICE_NETWORK, sip)
 	m.DAddr = NewAddress(SERVICE_NETWORK, dip)
-	m.Nonce = util.RandUInt64()
+	util.SetRandInt(&m.Nonce)
 	m.SubVer = conf.SubVer
 	m.Height = 0
 	m.Relay = 1

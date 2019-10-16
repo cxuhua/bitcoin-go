@@ -1,6 +1,8 @@
 package db
 
 import (
+	"bytes"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -19,8 +21,25 @@ func (m *mongoDBImp) DelBK(id []byte) error {
 	return err
 }
 
+//last block
+func (m *mongoDBImp) lastBK(v interface{}) error {
+	opts := options.FindOne()
+	opts.Sort = bson.M{"height": -1}
+	ret := m.blocks().FindOne(m, bson.M{}, opts)
+	if err := ret.Err(); err != nil {
+		return err
+	}
+	return ret.Decode(v)
+}
+
 func (m *mongoDBImp) GetBK(id []byte, v interface{}) error {
+	if bytes.Equal(NewestBK, id) {
+		return m.lastBK(v)
+	}
 	ret := m.blocks().FindOne(m, bson.M{"_id": id})
+	if err := ret.Err(); err != nil {
+		return err
+	}
 	return ret.Decode(v)
 }
 

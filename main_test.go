@@ -13,7 +13,6 @@ func getdata(c *core.Client, bid string) {
 		Type: core.MSG_BLOCK,
 		ID:   core.NewHashID(bid),
 	}
-	core.NewMsgGetBlocks()
 	c.WriteMsg(d)
 }
 
@@ -24,13 +23,13 @@ func TestRunClient(t *testing.T) {
 			log.Println("OnConnected")
 		},
 		OnClosed: func() {
-			log.Println("OnClosed")
+			log.Println("OnClosed", c.Err)
 		},
 		OnLoop: func() {
 			//
 		},
 		OnWrite: func(m core.MsgIO) {
-			log.Println("send message", m.Command())
+			log.Println("send message:", m.Command())
 		},
 		OnMessage: func(m core.MsgIO) {
 			cmd := m.Command()
@@ -43,6 +42,11 @@ func TestRunClient(t *testing.T) {
 				//c.WriteMsg(m)
 				d := core.NewMsgSendHeaders()
 				c.WriteMsg(d)
+
+				m := core.NewMsgSendCmpct()
+				m.Ver = 1
+				m.Inter = 1
+				c.WriteMsg(m)
 				//getdata(c, "0000000000000000000ab3075c92925e79f4c76cf5d1de4b07e48586de777026")
 				//m := core.NewMsgGetBlocks()
 				//m.AddHashID(core.NewHashID("000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"))
@@ -78,6 +82,9 @@ func TestRunClient(t *testing.T) {
 				m := m.(*core.MsgMerkleBlock)
 				a, b, c := m.Extract()
 				log.Println(a, b, c)
+			} else if cmd == core.NMT_CMPCTBLOCK {
+				m := m.(*core.MsgCmpctBlock)
+				log.Println(m.Header.Merkle)
 			}
 		},
 	})

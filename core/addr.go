@@ -1,28 +1,5 @@
 package core
 
-type MsgSendCmpct struct {
-	Inter uint8
-	Ver   uint64
-}
-
-func (m *MsgSendCmpct) Command() string {
-	return NMT_SENDCMPCT
-}
-
-func (m *MsgSendCmpct) Read(h *NetHeader) {
-	m.Inter = h.ReadUint8()
-	m.Ver = h.ReadUInt64()
-}
-
-func (m *MsgSendCmpct) Write(h *NetHeader) {
-	h.WriteUint8(m.Inter)
-	h.WriteUInt64(m.Ver)
-}
-
-func NewMsgSendCmpct() *MsgSendCmpct {
-	return &MsgSendCmpct{}
-}
-
 //
 
 type MsgFeeFilter struct {
@@ -70,7 +47,7 @@ func NewMsgSendHeaders() *MsgSendHeaders {
 
 type MsgAddr struct {
 	Num   uint64
-	Addrs []*Address
+	Addrs []Address
 }
 
 func (m *MsgAddr) Command() string {
@@ -82,11 +59,9 @@ func (m *MsgAddr) Read(h *NetHeader) {
 	num, l := h.ReadVarInt()
 	m.Num = num
 	size := (h.Len() - uint32(l)) / uint32(siz)
-	m.Addrs = make([]*Address, size)
+	m.Addrs = make([]Address, size)
 	for i, _ := range m.Addrs {
-		v := NewAddress(0, "0.0.0.0:0")
-		v.Read(h, h.Ver >= 31402)
-		m.Addrs[i] = v
+		m.Addrs[i].Read(h, true)
 	}
 }
 

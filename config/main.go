@@ -1,10 +1,5 @@
 package config
 
-import (
-	"fmt"
-	"net"
-)
-
 const (
 	PUBKEY_ADDRESS = iota
 	SCRIPT_ADDRESS
@@ -53,10 +48,6 @@ func (c Config) Base58Prefix(idx int) []byte {
 	return c.b58prefixs[idx]
 }
 
-func (c Config) GetLocalAddr() string {
-	return net.JoinHostPort(c.LocalIP, fmt.Sprintf("%d", c.ListenPort))
-}
-
 var (
 	config *Config = nil
 )
@@ -73,9 +64,9 @@ func GetConfig() *Config {
 	c.ListenAddr = "0.0.0.0"
 	c.ListenPort = 8333
 
-	c.MaxInConn = 50
+	c.MaxInConn = 5
 
-	c.MaxOutConn = 10
+	c.MaxOutConn = 5
 
 	c.b58prefixs = map[int][]byte{}
 	c.MsgStart = []byte{0xF9, 0xBE, 0xB4, 0xD9}

@@ -2,7 +2,11 @@ package core
 
 import (
 	"bitcoin/db"
+	"bytes"
+	"container/list"
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"sync"
 	"time"
@@ -11,6 +15,61 @@ import (
 const (
 	WorkerQueueSize = 64
 )
+
+type BlockHeaderList struct {
+	mu sync.Mutex
+	lv *list.List
+	ch *BHeader
+	ct time.Time
+}
+
+func (l *BlockHeaderList) has(hv HashID) (*list.Element, bool) {
+	for e := l.lv.Front(); e != nil; e = e.Next() {
+		if cv := e.Value.(*BHeader); cv.Hash.Equal(hv) {
+			return e, true
+		}
+	}
+	return nil, false
+}
+
+func (l *BlockHeaderList) PushMany(hs []*BHeader) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for _, v := range hs {
+		if _, ok := l.has(v.Hash); ok {
+			continue
+		}
+		l.lv.PushBack(v)
+	}
+}
+
+func (l *BlockHeaderList) PushOne(h *BHeader) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if _, ok := l.has(h.Hash); !ok {
+		l.lv.PushBack(h)
+	}
+}
+
+func (l *BlockHeaderList) Len() int {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.lv.Len()
+}
+
+func (l *BlockHeaderList) Remove(hv HashID) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if e, ok := l.has(hv); ok {
+		l.lv.Remove(e)
+	}
+}
+
+func NewBlockHeaderList() *BlockHeaderList {
+	return &BlockHeaderList{
+		lv: list.New(),
+	}
+}
 
 type WorkerUnit struct {
 	m MsgIO
@@ -25,20 +84,46 @@ var (
 	WorkerQueue = make(chan *WorkerUnit, WorkerQueueSize)
 )
 
-func processBlock(db db.DbImp, c *Client, m *MsgBlock) {
-
+func processBlock(wid int, db db.DbImp, c *Client, m *MsgBlock) error {
+	log.Println("Work id", wid, "recv block:", m.Hash)
+	bh := m.ToBlockHeader()
+	if err := db.SetBK(bh.Hash, bh); err != nil {
+		return fmt.Errorf("DB save block header error %v", err)
+	}
+	G.SetLastBlock(bh)
+	return nil
 }
 
-func processTX(db db.DbImp, c *Client, m *MsgTX) {
-
+func processTX(wid int, db db.DbImp, c *Client, m *MsgTX) error {
+	//log.Println("Work id", wid, "recv tx")
+	return nil
 }
 
-func processHeaders(db db.DbImp, c *Client, m *MsgHeaders) {
-
+func processHeaders(wid int, db db.DbImp, c *Client, m *MsgHeaders) error {
+	for _, v := range m.Headers {
+		lb := G.LastBlock()
+		bh := v.ToBlockHeader()
+		if !bytes.Equal(bh.Prev, lb.Hash) {
+			continue
+		}
+		bh.Height = lb.Height + 1
+		if err := db.SetBK(bh.Hash, bh); err != nil {
+			return fmt.Errorf("DB setbk error %v", err)
+		}
+		G.SetLastBlock(bh)
+		log.Println("save blockheader", NewHashID(bh.Hash), bh.Height)
+	}
+	return nil
 }
 
-func processInv(db db.DbImp, c *Client, m *MsgINV) {
+func processInv(wid int, db db.DbImp, c *Client, m *MsgINV) error {
+	//log.Println("Work id", wid, "recv inv")
+	return nil
+}
 
+func processGetHeaders(wid int, db db.DbImp, c *Client, m *MsgGetHeaders) error {
+	//log.Println("Work id", wid, "recv headers")
+	return nil
 }
 
 func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
@@ -51,31 +136,39 @@ func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
 			}
 		}()
 		for {
+			var err error = nil
 			select {
 			case unit := <-WorkerQueue:
 				cmd := unit.m.Command()
 				switch cmd {
 				case NMT_INV:
-					processInv(db, unit.c, unit.m.(*MsgINV))
+					err = processInv(i, db, unit.c, unit.m.(*MsgINV))
 				case NMT_BLOCK:
-					processBlock(db, unit.c, unit.m.(*MsgBlock))
+					err = processBlock(i, db, unit.c, unit.m.(*MsgBlock))
 				case NMT_TX:
-					processTX(db, unit.c, unit.m.(*MsgTX))
+					err = processTX(i, db, unit.c, unit.m.(*MsgTX))
 				case NMT_HEADERS:
-					processHeaders(db, unit.c, unit.m.(*MsgHeaders))
+					err = processHeaders(i, db, unit.c, unit.m.(*MsgHeaders))
+				case NMT_GETHEADERS:
+					err = processGetHeaders(i, db, unit.c, unit.m.(*MsgGetHeaders))
 				}
 			case <-ctx.Done():
-				log.Println("stop worker unit", i, ctx.Err())
-				return ctx.Err()
+				err = fmt.Errorf("recv done worker exit %v", ctx.Err())
+			}
+			if err != nil {
+				return err
 			}
 		}
 	}
-	for ctx.Err() != context.Canceled {
+	for {
 		time.Sleep(time.Second * 3)
 		err := db.UseSession(ctx, func(db db.DbImp) error {
 			return mfx(db)
 		})
-		log.Println("db session end, return err", err)
+		log.Println("db session end, return err:", err)
+		if errors.Is(context.Canceled, err) {
+			return
+		}
 	}
 }
 

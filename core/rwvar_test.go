@@ -3,10 +3,19 @@ package core
 import (
 	"bitcoin/util"
 	"bytes"
+	"container/list"
 	"encoding/binary"
 	"log"
 	"testing"
 )
+
+func TestList(t *testing.T) {
+	l := list.New()
+	l.PushBack(1)
+	l.PushBack(2)
+	l.PushBack(3)
+	log.Println(l)
+}
 
 func TestHash(t *testing.T) {
 	r := bytes.NewBuffer(util.HexDecode("39220900"))

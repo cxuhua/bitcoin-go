@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"log"
 	"net"
@@ -57,6 +58,9 @@ func (l *defaultLister) OnLoop() {
 }
 
 func (l *defaultLister) OnMessage(m MsgIO) {
+	if m == nil {
+		return
+	}
 	if l.lis != nil && l.lis.OnMessage != nil {
 		l.lis.OnMessage(m)
 	}
@@ -75,8 +79,7 @@ type Client struct {
 	Type      ClientType
 	wc        chan MsgIO
 	rc        chan *NetHeader
-	IP        net.IP
-	Port      uint16
+	IP        IPPort
 	connected bool
 	try       int
 	Acked     bool //is recv verack
@@ -138,6 +141,7 @@ func (c *Client) processMsg(m *NetHeader) {
 	case NMT_SENDCMPCT:
 		mp := NewMsgSendCmpct()
 		msg = m.Full(mp)
+		//log.Println("cmpct ver=", mp.Ver, " set=", mp.Inter)
 	case NMT_GETHEADERS:
 		mp := NewMsgGetHeaders()
 		msg = m.Full(mp)
@@ -169,6 +173,15 @@ func (c *Client) processMsg(m *NetHeader) {
 	case NMT_MERKLEBLOCK:
 		mp := NewMsgMerkleBlock()
 		msg = m.Full(mp)
+	case NMT_CMPCTBLOCK:
+		mp := NewMsgCmpctBlock()
+		msg = m.Full(mp)
+	case NMT_GETBLOCKTXN:
+		mp := NewMsgBlockTxn()
+		msg = m.Full(mp)
+	case NMT_BLOCKTXN:
+		mp := NewMsgBlockTxn()
+		msg = m.Full(mp)
 	default:
 		log.Println(m.Command, " not process", c.IP)
 		return
@@ -177,7 +190,7 @@ func (c *Client) processMsg(m *NetHeader) {
 }
 
 func (c *Client) OnReady() {
-
+	c.WriteMsg(NewMsgPing())
 }
 
 func (c *Client) OnPong(msg *MsgPong) {
@@ -197,15 +210,15 @@ func (c *Client) IsConnected() bool {
 	return c.connected
 }
 
-func (c *Client) GetAddr() string {
-	return fmt.Sprintf("%s:%d", c.IP.String(), c.Port)
-}
-
 func (c *Client) OnConnected() {
 	if c.Type == ClientTypeOut {
+		conf := config.GetConfig()
 		OutIps.Set(c)
-		addr := config.GetConfig().GetLocalAddr()
-		mp := NewMsgVersion(addr, c.GetAddr())
+		local := IPPort{
+			ip:   net.ParseIP(conf.LocalIP),
+			port: conf.ListenPort,
+		}
+		mp := NewMsgVersion(local, c.IP)
 		c.WriteMsg(mp)
 	} else if c.Type == ClientTypeIn {
 		InIps.Set(c)
@@ -224,7 +237,7 @@ func (c *Client) OnError(err interface{}) {
 }
 
 func (c *Client) Key() string {
-	return net.JoinHostPort(c.IP.String(), fmt.Sprintf("%d", c.Port))
+	return c.IP.Key()
 }
 
 func (c *Client) stop() {
@@ -309,6 +322,7 @@ func (c *Client) run() {
 			if !c.Acked {
 				c.cancel()
 			}
+			c.Err = errors.New("recv version packet timeout")
 		case <-ltimer.C:
 			c.OnLoop()
 			ltimer.Reset(time.Second)
@@ -358,8 +372,7 @@ func (c *Client) SipHashExtra(hv HashID, extra uint32) uint64 {
 func NewClientWithIPPort(typ ClientType, ip IPPort) *Client {
 	c := &Client{}
 	c.connected = typ == ClientTypeIn
-	c.IP = ip.ip
-	c.Port = uint16(ip.port)
+	c.IP = ip
 	c.Type = typ
 	c.try = 3
 	c.ctx, c.cancel = context.WithCancel(context.Background())

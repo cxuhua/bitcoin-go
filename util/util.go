@@ -12,6 +12,10 @@ import (
 	"strings"
 )
 
+func SetRandInt(v interface{}) {
+	binary.Read(rand.Reader, binary.LittleEndian, v)
+}
+
 func ParseAddr(addr string) (net.IP, uint16) {
 	conf := config.GetConfig()
 	host, port, err := net.SplitHostPort(addr)
@@ -124,14 +128,6 @@ func BECH32Address(pk []byte) string {
 		panic(err)
 	}
 	return addr
-}
-
-func RandUInt64() uint64 {
-	v := uint64(0)
-	if err := binary.Read(rand.Reader, binary.LittleEndian, &v); err != nil {
-		panic(err)
-	}
-	return v
 }
 
 func String(b []byte) string {

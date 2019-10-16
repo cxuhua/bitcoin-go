@@ -9,8 +9,9 @@ import (
 )
 
 var (
-	client *mongo.Client = nil
-	dbonce               = sync.Once{}
+	client   *mongo.Client = nil
+	dbonce                 = sync.Once{}
+	NewestBK               = []byte{0} //use GetBK method
 )
 
 type mongoDBImp struct {
