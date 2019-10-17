@@ -170,21 +170,3 @@ func TestTXWithWitness(t *testing.T) {
 		t.Errorf("check tx error %v", err)
 	}
 }
-
-func TestBlockData(t *testing.T) {
-	blockId := NewHashID("0000000000000000002a2451180749294cd74058e0a0dd37cc19ad0ee66e77ff")
-
-	data, err := ioutil.ReadFile("../dat/block.dat")
-	if err != nil {
-		panic(err)
-	}
-	h := NewNetHeader(data)
-	m := NewMsgBlock()
-	m.Read(h)
-	if !m.Hash.Equal(blockId) {
-		t.Errorf("block hashid error")
-	}
-	if !m.Merkle.Equal(m.MarkleId()) {
-		t.Errorf("equal markle error")
-	}
-}

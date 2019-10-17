@@ -34,7 +34,10 @@ func (m *mongoDBImp) listBlockTxs(bid []byte, v interface{}) error {
 	}
 	defer iter.Close(m)
 	for iter.Next(m) {
-		fn(iter)
+		err := fn(iter)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }

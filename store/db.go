@@ -1,6 +1,7 @@
 package store
 
 import (
+	"container/list"
 	"context"
 	"encoding/binary"
 	"sync"
@@ -18,7 +19,7 @@ var (
 	ListBlockTxs               = []byte{0} //33bytes [1:] = block id
 )
 
-type IterFunc func(cursor *mongo.Cursor)
+type IterFunc func(cursor *mongo.Cursor) error
 
 func IsListBlockTxs(id []byte) ([]byte, bool) {
 	b := len(id) == 33 && id[0] == ListBlockTxs[0]
@@ -57,21 +58,32 @@ func BKHeight(h uint32) []byte {
 
 type mongoDBImp struct {
 	context.Context
-	cache DbCacher
+	clist *list.List
 }
 
 //get dbcacher
-func (m *mongoDBImp) TXCacher() DbCacher {
-	if m.cache != nil {
-		return m.cache
-	} else {
-		return &cacherInvoker{DbCacher: m.cache}
+func (m *mongoDBImp) TopTxCacher() DbCacher {
+	if m.clist.Len() == 0 {
+		return &cacherInvoker{DbCacher: nil}
 	}
+	cacher := m.clist.Front().Value.(DbCacher)
+	return &cacherInvoker{DbCacher: cacher}
+}
+
+func (m *mongoDBImp) PopTxCacher() {
+	if m.clist.Len() == 0 {
+		return
+	}
+	m.clist.Remove(m.clist.Front())
 }
 
 //set txcacher
-func (m *mongoDBImp) SetTXCacher(c DbCacher) {
-	m.cache = c
+func (m *mongoDBImp) PushTxCacher(c DbCacher) {
+	m.clist.PushFront(c)
+}
+
+func (m *mongoDBImp) accounts() *mongo.Collection {
+	return m.database().Collection(ACCOUNT_TABLE)
 }
 
 func (m *mongoDBImp) blocks() *mongo.Collection {
@@ -90,8 +102,20 @@ func (m *mongoDBImp) client() *mongo.Client {
 	return m.Context.(mongo.SessionContext).Client()
 }
 
+func (m *mongoDBImp) Transaction(fn func(db DbImp) error) error {
+	ctx := m.Context.(mongo.SessionContext)
+	_, err := ctx.WithTransaction(m, func(sess mongo.SessionContext) (interface{}, error) {
+		err := fn(NewDBImp(sess))
+		return nil, err
+	})
+	return err
+}
+
 func NewDBImp(ctx context.Context) DbImp {
-	return &mongoDBImp{Context: ctx}
+	return &mongoDBImp{
+		Context: ctx,
+		clist:   list.New(),
+	}
 }
 
 func InitDB(ctx context.Context) *mongo.Client {

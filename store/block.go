@@ -35,7 +35,10 @@ func (m *mongoDBImp) listSyncBK(v interface{}) error {
 	}
 	defer iter.Close(m)
 	for iter.Next(m) {
-		fn(iter)
+		err := fn(iter)
+		if err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -69,9 +72,18 @@ func (m *mongoDBImp) GetBK(id []byte, v interface{}) error {
 	return ret.Decode(v)
 }
 
+func (m *mongoDBImp) ValidBK(id []byte) bool {
+	opts := options.FindOne().SetProjection(bson.M{"_id": 1})
+	cond := bson.M{"_id": id, "count": bson.M{"$gt": 0}}
+	ret := m.blocks().FindOne(m, cond, opts)
+	return ret.Err() == nil
+}
+
 //check tx exists
 func (m *mongoDBImp) HasBK(id []byte) bool {
-	ret := m.blocks().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+	opts := options.FindOne().SetProjection(bson.M{"_id": 1})
+	cond := bson.M{"_id": id}
+	ret := m.blocks().FindOne(m, cond, opts)
 	return ret.Err() == nil
 }
 

@@ -106,6 +106,12 @@ func (c *Client) WriteMsg(m MsgIO) {
 	c.wc <- m
 }
 
+func (c *Client) OnVersion() {
+	if c.Type == ClientTypeIn {
+		InIps.Set(c)
+	}
+}
+
 func (c *Client) processMsg(m *NetHeader) {
 	if c.Acked {
 		m.Ver = c.VerInfo.Ver
@@ -116,6 +122,7 @@ func (c *Client) processMsg(m *NetHeader) {
 		mp := &MsgVersion{}
 		msg = m.Full(mp)
 		c.VerInfo = mp
+		c.OnVersion()
 	case NMT_VERACK:
 		mp := &MsgVerAck{}
 		msg = m.Full(mp)
@@ -191,6 +198,9 @@ func (c *Client) processMsg(m *NetHeader) {
 
 func (c *Client) OnReady() {
 	c.WriteMsg(NewMsgPing())
+	if c.Type == ClientTypeOut {
+		OutIps.Set(c)
+	}
 }
 
 func (c *Client) OnPong(msg *MsgPong) {
@@ -213,15 +223,12 @@ func (c *Client) IsConnected() bool {
 func (c *Client) OnConnected() {
 	if c.Type == ClientTypeOut {
 		conf := config.GetConfig()
-		OutIps.Set(c)
 		local := IPPort{
 			ip:   net.ParseIP(conf.LocalIP),
 			port: conf.ListenPort,
 		}
 		mp := NewMsgVersion(local, c.IP)
 		c.WriteMsg(mp)
-	} else if c.Type == ClientTypeIn {
-		InIps.Set(c)
 	}
 	c.listener.OnConnected()
 }

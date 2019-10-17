@@ -91,14 +91,16 @@ func (a *AddrMap) Iter(f func(a *AddrElement)) {
 	}
 }
 
-func (a *AddrMap) Set(ip IPPort) {
+func (a *AddrMap) Set(ip IPPort) *AddrElement {
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	a.ips[ip.Key()] = &AddrElement{
+	v := &AddrElement{
 		IP:       ip,
 		LastTime: time.Now(),
 		State:    AddrStatePush,
 	}
+	a.ips[ip.Key()] = v
+	return v
 }
 
 func (a *AddrMap) UpRead(ip IPPort) {
@@ -179,6 +181,7 @@ func (a *AddrMap) Del(ip IPPort) {
 type ClientMap struct {
 	mu    sync.Mutex
 	nodes map[string]*Client
+	seq   int
 }
 
 func NewClientMap() *ClientMap {
@@ -191,9 +194,10 @@ func (m *ClientMap) Fastest(num int, stop bool) []*Client {
 	defer m.mu.Unlock()
 	ds := []*Client{}
 	for _, v := range m.nodes {
-		if v.Ping > 0 {
-			ds = append(ds, v)
+		if v.Ping == 0 {
+			v.Ping = int(^uint16(0))
 		}
+		ds = append(ds, v)
 	}
 	sort.Slice(ds, func(i, j int) bool {
 		return ds[i].Ping < ds[j].Ping
@@ -227,7 +231,7 @@ func (m *ClientMap) Has(c *Client) bool {
 	return ok
 }
 
-func (m *ClientMap) AnyWrite(msg MsgIO) bool {
+func (m *ClientMap) Seq() *Client {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ds := []*Client{}
@@ -238,13 +242,33 @@ func (m *ClientMap) AnyWrite(msg MsgIO) bool {
 		return ds[i].Ping < ds[j].Ping
 	})
 	if len(ds) == 0 {
-		return false
+		return nil
+	}
+	if m.seq > len(ds) {
+		m.seq = 0
+	}
+	idx := m.seq % len(ds)
+	m.seq++
+	return ds[idx]
+}
+
+func (m *ClientMap) Any() *Client {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ds := []*Client{}
+	for _, v := range m.nodes {
+		ds = append(ds, v)
+	}
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].Ping < ds[j].Ping
+	})
+	if len(ds) == 0 {
+		return nil
 	}
 	nv := uint16(0)
 	util.SetRandInt(&nv)
 	nv = nv % uint16(len(ds))
-	ds[nv].WriteMsg(msg)
-	return true
+	return ds[nv]
 }
 
 func (m *ClientMap) Len() int {
@@ -281,7 +305,6 @@ func startconnect(ip IPPort) {
 		},
 		OnClosed: func() {
 			Addrs.Close(c.IP)
-			//log.Println(c.Key(), "Closed error = ", c.Err)
 		},
 		OnLoop: func() {
 			Addrs.Update(c)
@@ -306,41 +329,32 @@ func startconnect(ip IPPort) {
 			Addrs.SetError(c.IP, err)
 		},
 	})
-	log.Println("start connect :", c.Key())
 	c.Run()
 }
 
 func checkStatus(conf *config.Config) {
-	//log.Println("Out Count=", OutIps.Len(), "Addrs Count=", Addrs.Len())
-	//ds := OutIps.Fastest(conf.MaxOutConn, true)
-	//for i, v := range ds {
-	//	log.Println("Fastest ip", i, v.IP.ip.String(), v.IP.port, v.Ping)
-	//}
 	OutIps.Fastest(conf.MaxOutConn, true)
+	//log.Println("Out Count=", OutIps.Len(), "Addrs Count=", Addrs.Len())
+	log.Println("mempool txs count", TxsMap.Len())
 }
 
-func processAddrs(addr *MsgAddr) {
+func processAddrs(addr *MsgAddr, conf *config.Config) {
 	for _, v := range addr.Addrs {
 		if v.Service&NODE_NETWORK != 0 {
 			continue
 		}
 		ip := IPPort{v.IpAddr, int(v.Port)}
-		Addrs.Set(ip)
+		Addrs.Set(ip).State = AddrStateClose
 	}
 }
 
-const (
-	NoticeSaveHeaders = 1
-	NoticeRecvBlock   = 2
-)
-
 var (
-	Notice  = make(chan int, 10)
+	Notice  = make(chan *Client, 10)
 	Headers = NewBlockHeaderList()
 )
 
-func syncData(db store.DbImp, conf *config.Config) {
-	if OutIps.Len() == 0 {
+func syncData(db store.DbImp, client *Client, conf *config.Config) {
+	if OutIps.Len() == 0 || client == nil {
 		return
 	}
 	if G.LastBlock() == nil {
@@ -349,7 +363,7 @@ func syncData(db store.DbImp, conf *config.Config) {
 			Type: MSG_BLOCK,
 			ID:   NewHashID(conf.GenesisBlock),
 		})
-		OutIps.AnyWrite(m)
+		client.WriteMsg(m)
 		return
 	}
 	if Headers.Len() == 0 {
@@ -358,13 +372,13 @@ func syncData(db store.DbImp, conf *config.Config) {
 	if Headers.Len() == 0 {
 		m := NewMsgGetHeaders()
 		m.AddHash(G.LastBlock().Hash)
-		OutIps.AnyWrite(m)
+		client.WriteMsg(m)
 		return
 	}
 	if h := Headers.Front(); h != nil {
 		m := NewMsgGetData()
 		m.AddHash(MSG_BLOCK, h.Hash)
-		OutIps.AnyWrite(m)
+		client.WriteMsg(m)
 		return
 	}
 }
@@ -386,12 +400,13 @@ func StartDispatch(ctx context.Context) {
 		stimer := time.NewTimer(time.Second * 10)
 		for {
 			select {
-			case <-Notice:
-				stimer.Reset(time.Millisecond * 10)
+			case client := <-Notice:
+				syncData(db, client, conf)
+				stimer.Reset(time.Second * 30)
 			case addrs := <-RecvAddr:
-				processAddrs(addrs)
+				processAddrs(addrs, conf)
 			case <-stimer.C:
-				syncData(db, conf)
+				syncData(db, OutIps.Seq(), conf)
 				stimer.Reset(time.Second * 10)
 			case <-ctimer.C:
 				checkStatus(conf)

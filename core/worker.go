@@ -21,8 +21,6 @@ const (
 type BlockHeaderList struct {
 	mu sync.Mutex
 	lv *list.List
-	ch *BlockHeader
-	ct time.Time
 }
 
 func (l *BlockHeaderList) Front() *BlockHeader {
@@ -31,14 +29,10 @@ func (l *BlockHeaderList) Front() *BlockHeader {
 	if l.lv.Len() == 0 {
 		return nil
 	}
-	now := time.Now()
-	fv := l.lv.Front().Value.(*BlockHeader)
-	if l.ch == fv && now.Sub(l.ct) < time.Second*30 {
-		return nil
-	}
-	l.ch = fv
-	l.ct = time.Now()
-	return l.ch
+	el := l.lv.Front()
+	fv := el.Value.(*BlockHeader)
+	l.lv.Remove(el)
+	return fv
 }
 
 func (l *BlockHeaderList) Push(h *BlockHeader) {
@@ -54,26 +48,27 @@ func (l *BlockHeaderList) Len() int {
 }
 
 //load not download block header
-func (l *BlockHeaderList) Load(db store.DbImp) {
+func (l *BlockHeaderList) Load(db store.DbImp) error {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	db.GetBK(store.ListSyncBK, store.IterFunc(func(cur *mongo.Cursor) {
+	return db.GetBK(store.ListSyncBK, store.IterFunc(func(cur *mongo.Cursor) error {
 		hv := &BlockHeader{}
 		err := cur.Decode(hv)
 		if err != nil {
-			return
+			return err
 		}
 		l.lv.PushBack(hv)
+		return nil
 	}))
 }
 
 func (l *BlockHeaderList) Pop() {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if l.lv.Len() > 0 {
-		l.lv.Remove(l.lv.Front())
-		l.ch = nil
+	if l.lv.Len() == 0 {
+		return
 	}
+	l.lv.Remove(l.lv.Front())
 }
 
 func NewBlockHeaderList() *BlockHeaderList {
@@ -96,26 +91,59 @@ var (
 )
 
 func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
-	log.Println("Work id", wid, "recv block:", m.Hash)
+	log.Println("Work id", wid, "recv block:", m.Hash, " from", c.Key())
+	//check block and block txs
+	if err := m.CheckBlock(db); err != nil {
+		return fmt.Errorf("check block error %v,ignore save", err)
+	}
+	//save block
 	bh := m.ToBlockHeader()
 	if bh.IsGenesis() {
-		if err := db.SetBK(bh.Hash, bh); err != nil {
-			return fmt.Errorf("DB save block header error %v", err)
+		err := db.Transaction(func(sdb store.DbImp) error {
+			if err := sdb.SetBK(bh.Hash, bh); err != nil {
+				return fmt.Errorf("DB save block header error %v", err)
+			}
+			return m.SaveTXS(sdb)
+		})
+		if err != nil {
+			return err
 		}
 		G.SetLastBlock(bh)
-	} else {
-		v := store.SetValue{"count": bh.Count}
-		if err := db.SetBK(bh.Hash, v); err != nil {
-			return fmt.Errorf("DB set block tx count error %v", err)
-		}
-		Headers.Pop()
+		Notice <- c
+		return nil
 	}
-	Notice <- NoticeRecvBlock
-	return nil
+	return db.Transaction(func(sdb store.DbImp) error {
+		if !sdb.HasBK(bh.Hash) {
+			lb := G.LastBlock()
+			if !bytes.Equal(bh.Prev, lb.Hash) {
+				return errors.New("recv block,can't link prev block")
+			}
+			bh.Height = lb.Height + 1
+			if err := sdb.SetBK(bh.Hash, bh); err != nil {
+				return fmt.Errorf("DB setbk error %v", err)
+			}
+			if err := m.SaveTXS(sdb); err != nil {
+				return err
+			}
+			G.SetLastBlock(bh)
+			return nil
+		} else {
+			v := store.SetValue{"count": bh.Count}
+			if err := sdb.SetBK(bh.Hash, v); err != nil {
+				return fmt.Errorf("DB set block tx count error %v", err)
+			}
+			if err := m.SaveTXS(sdb); err != nil {
+				return err
+			}
+			Notice <- c
+			return nil
+		}
+	})
 }
 
 func processTX(wid int, db store.DbImp, c *Client, m *MsgTX) error {
-	//log.Println("Work id", wid, "recv tx")
+	//log.Println("Work id", wid, "recv tx=", m.Tx.Hash)
+	TxsMap.Set(&m.Tx)
 	return nil
 }
 
@@ -135,13 +163,33 @@ func processHeaders(wid int, db store.DbImp, c *Client, m *MsgHeaders) error {
 		log.Println("save blockheader", NewHashID(bh.Hash), bh.Height)
 	}
 	if Headers.Len() > 0 {
-		Notice <- NoticeSaveHeaders
+		Notice <- c
 	}
 	return nil
 }
 
 func processInv(wid int, db store.DbImp, c *Client, m *MsgINV) error {
 	//log.Println("Work id", wid, "recv inv")
+	hm := NewMsgGetHeaders()
+	tm := NewMsgGetData()
+	for _, v := range m.Invs {
+		switch v.Type {
+		case MSG_TX:
+			//log.Println("get inv TX ", v.ID, " start get TX data")
+			tm.AddHash(v.Type, v.ID[:])
+		case MSG_BLOCK:
+			log.Println("get inv block id", v.ID, " start get block headers")
+			tm.AddHash(v.Type, v.ID[:])
+		case MSG_FILTERED_BLOCK:
+		case MSG_CMPCT_BLOCK:
+		}
+	}
+	if len(hm.Blocks) > 0 {
+		c.WriteMsg(hm)
+	}
+	if len(tm.Invs) > 0 {
+		c.WriteMsg(tm)
+	}
 	return nil
 }
 

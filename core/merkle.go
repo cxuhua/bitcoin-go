@@ -69,12 +69,13 @@ func (tree *MerkleTree) Height() int {
 	return h
 }
 
-func (tree *MerkleTree) Build(ids []HashID, vb *bitset.BitSet) {
+func (tree *MerkleTree) Build(ids []HashID, vb *bitset.BitSet) *MerkleTree {
 	tree.bad = false
 	tree.vhash = []HashID{}
 	tree.bits = []bool{}
 	h := tree.Height()
 	tree.build(h, 0, ids, vb)
+	return tree
 }
 
 func (tree *MerkleTree) build(h int, pos int, ids []HashID, vb *bitset.BitSet) {

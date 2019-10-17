@@ -60,10 +60,18 @@ type IncValue map[string]int
 
 type DbImp interface {
 	context.Context
+	//get account data
+	GetAT(id []byte, v interface{}) error
+	//exists account
+	HasAT(id []byte) bool
+	//save or update account
+	SetAT(id []byte, v interface{}) error
 	//use txcacher
-	TXCacher() DbCacher
-	//set txcacher
-	SetTXCacher(c DbCacher)
+	TopTxCacher() DbCacher
+	//push txcacher
+	PushTxCacher(c DbCacher)
+	//pop cacher
+	PopTxCacher()
 	//get trans raw data
 	GetTX(id []byte, v interface{}) error
 	//save or update tans data
@@ -72,14 +80,18 @@ type DbImp interface {
 	HasTX(id []byte) bool
 	//delete tx
 	DelTX(id []byte) error
-	//multiple opt id != nil will read blockid =id txs and order by index
+	//multiple tx save
 	MulTX(v []interface{}) error
 	//get block raw data
 	GetBK(id []byte, v interface{}) error
 	//exists bk
 	HasBK(id []byte) bool
+	//valid bk: exists and check pass,count > 0
+	ValidBK(id []byte) bool
 	//save or update block data
 	SetBK(id []byte, v interface{}) error
 	//del block data
 	DelBK(id []byte) error
+	//transaction
+	Transaction(fn func(db DbImp) error) error
 }

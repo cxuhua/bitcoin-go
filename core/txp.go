@@ -5,6 +5,10 @@ import (
 	"bitcoin/store"
 	"bytes"
 	"errors"
+	"fmt"
+	"time"
+
+	"github.com/willf/bitset"
 
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -235,7 +239,7 @@ func (txh *TXHeader) ToTX() *TX {
 
 func LoadTX(id HashID, d store.DbImp) (*TX, error) {
 	//from cache get
-	if v, err := d.TXCacher().Get(id[:]); err == nil {
+	if v, err := d.TopTxCacher().Get(id[:]); err == nil {
 		return v.(*TX), nil
 	}
 	//from database
@@ -246,7 +250,7 @@ func LoadTX(id HashID, d store.DbImp) (*TX, error) {
 	}
 	tx := txh.ToTX()
 	//set to cache
-	d.TXCacher().Set(id[:], tx)
+	d.TopTxCacher().Set(id[:], tx)
 	return tx, nil
 }
 
@@ -258,6 +262,45 @@ func NewTXFrom(tx *TX) *TXHeader {
 	txh.Block = tx.Block[:]
 	txh.Index = tx.Index
 	return txh
+}
+
+//check tx ,return trans fee
+func (m *TX) CheckAmount(db store.DbImp) (Amount, error) {
+	iv := Amount(0)
+	ov := Amount(0)
+	if m.IsCoinBase() {
+		for _, v := range m.Outs {
+			ov += Amount(v.Value)
+		}
+		if !ov.IsRange() {
+			return 0, errors.New("out amount sum error")
+		}
+		return ov, nil
+	}
+	for _, v := range m.Ins {
+		ptx, err := LoadTX(v.OutHash, db)
+		if err != nil {
+			return 0, err
+		}
+		if int(v.OutIndex) >= len(ptx.Outs) {
+			return 0, errors.New("out tx miss")
+		}
+		out := ptx.Outs[v.OutIndex]
+		iv += Amount(out.Value)
+	}
+	if !iv.IsRange() {
+		return 0, errors.New("in amount sum error")
+	}
+	for _, v := range m.Outs {
+		ov += Amount(v.Value)
+	}
+	if !ov.IsRange() {
+		return 0, errors.New("out amount sum error")
+	}
+	if iv < ov {
+		return 0, errors.New("in out amount sub error")
+	}
+	return iv - ov, nil
 }
 
 func (m *TX) Save(d store.DbImp) error {
@@ -625,6 +668,31 @@ type BlockHeader struct {
 	Count     int    `bson:"count"` //tx count ,=0 not dowload
 }
 
+func (b *BlockHeader) Equal(v *BlockHeader) bool {
+	if !bytes.Equal(b.Hash, v.Hash) {
+		return false
+	}
+	if b.Ver != v.Ver {
+		return false
+	}
+	if !bytes.Equal(b.Prev, v.Prev) {
+		return false
+	}
+	if !bytes.Equal(b.Merkle, v.Merkle) {
+		return false
+	}
+	if b.Timestamp != v.Timestamp {
+		return false
+	}
+	if b.Bits != v.Bits {
+		return false
+	}
+	if b.Nonce != v.Nonce {
+		return false
+	}
+	return true
+}
+
 func NewBlockHeader() *BlockHeader {
 	bh := &BlockHeader{}
 	bh.Hash = make([]byte, len(HashID{}))
@@ -634,7 +702,7 @@ func NewBlockHeader() *BlockHeader {
 }
 
 func (b *BlockHeader) IsGenesis() bool {
-	return bytes.Equal(ZeroHashID[:], b.Hash)
+	return bytes.Equal(ZeroHashID[:], b.Prev)
 }
 
 func (b *BlockHeader) ToBlock() *MsgBlock {
@@ -664,14 +732,63 @@ func (m *MsgBlock) ToBlockHeader() *BlockHeader {
 	return h
 }
 
+//check recv block
+func (m *MsgBlock) CheckBlock(db store.DbImp) error {
+	has := db.ValidBK(m.Hash[:])
+	hvs := []HashID{}
+	bfee := Amount(0)
+	db.PushTxCacher(NewMemoryCacher(m.Count, time.Minute*10))
+	defer db.PopTxCacher()
+	//push current block tx
+	for _, v := range m.Txs {
+		if err := v.Check(); err != nil {
+			return fmt.Errorf("check block tx error %v", err)
+		}
+		if !has && db.HasTX(v.Hash[:]) {
+			return errors.New("block tx exists,error")
+		}
+		if !has {
+			db.TopTxCacher().Set(v.Hash[:], v)
+		}
+		hvs = append(hvs, v.Hash)
+		if v.IsCoinBase() {
+			continue
+		}
+		if err := VerifyTX(v, db); err != nil {
+			return fmt.Errorf("verify tx error %v", err)
+		}
+		av, err := v.CheckAmount(db)
+		if err != nil {
+			return fmt.Errorf("check tx amount error %v", err)
+		}
+		bfee += av
+	}
+	num := len(hvs)
+	bits := bitset.New(uint(num))
+	tree := NewMerkleTree(num).Build(hvs, bits)
+	root, _, _ := tree.Extract()
+	if !root.Equal(m.Merkle) {
+		return errors.New("Calc merkle id error")
+	}
+	if !bfee.IsRange() {
+		return errors.New("check block fee error")
+	}
+	return nil
+}
+
 //load txs from database
 func (m *MsgBlock) LoadTXS(db store.DbImp) error {
 	m.Txs = []*TX{}
-	return db.GetTX(store.NewListBlockTxs(m.Hash[:]), store.IterFunc(func(cursor *mongo.Cursor) {
+	err := db.GetTX(store.NewListBlockTxs(m.Hash[:]), store.IterFunc(func(cur *mongo.Cursor) error {
 		txh := TXHeader{}
-		cursor.Decode(&txh)
+		if err := cur.Decode(&txh); err != nil {
+			return err
+		}
 		m.Txs = append(m.Txs, txh.ToTX())
+		return nil
 	}))
+	m.Count = len(m.Txs)
+	return err
 }
 func (m *MsgBlock) PrevBlock(db store.DbImp) (*MsgBlock, error) {
 	return LoadBlock(m.Prev, db)
@@ -751,16 +868,15 @@ func (m *MsgBlock) Write(h *NetHeader) {
 	m.Count = len(m.Txs)
 }
 
-func (m *MsgBlock) MarkleNodes() *MerkleTree {
-	return NewMerkleTree(len(m.Txs))
-}
-
-func (m *MsgBlock) MarkleId() HashID {
-	ret := HashID{}
-	//nodes := m.MarkleNodes()
-	//tree := script.NewMerkleTree(nodes)
-	//copy(ret[:], tree.Root())
-	return ret
+func (m *MsgBlock) BuildMarkleTree() *MerkleTree {
+	hvs := []HashID{}
+	for _, v := range m.Txs {
+		hvs = append(hvs, v.Hash)
+	}
+	num := len(hvs)
+	bits := bitset.New(uint(num))
+	tree := NewMerkleTree(num)
+	return tree.Build(hvs, bits)
 }
 
 func NewMsgBlock() *MsgBlock {
