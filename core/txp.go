@@ -1,12 +1,12 @@
 package core
 
 import (
+	"bitcoin/config"
 	"bitcoin/script"
 	"bitcoin/store"
 	"bytes"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/willf/bitset"
 
@@ -577,6 +577,10 @@ func (m *MsgGetBlocks) Command() string {
 	return NMT_GETBLOCKS
 }
 
+func (m *MsgGetBlocks) AddHash(hv []byte) {
+	m.Blocks = append(m.Blocks, NewHashID(hv))
+}
+
 func (m *MsgGetBlocks) AddHashID(hv HashID) {
 	m.Blocks = append(m.Blocks, hv)
 }
@@ -702,7 +706,9 @@ func NewBlockHeader() *BlockHeader {
 }
 
 func (b *BlockHeader) IsGenesis() bool {
-	return bytes.Equal(ZeroHashID[:], b.Prev)
+	conf := config.GetConfig()
+	gid := NewHashID(conf.GenesisBlock)
+	return bytes.Equal(ZeroHashID[:], b.Prev[:]) && bytes.Equal(gid[:], b.Hash[:])
 }
 
 func (b *BlockHeader) ToBlock() *MsgBlock {
@@ -732,28 +738,62 @@ func (m *MsgBlock) ToBlockHeader() *BlockHeader {
 	return h
 }
 
+func (b *MsgBlock) IsGenesis() bool {
+	conf := config.GetConfig()
+	gid := NewHashID(conf.GenesisBlock)
+	return bytes.Equal(ZeroHashID[:], b.Prev[:]) && bytes.Equal(gid[:], b.Hash[:])
+}
+
+func (m *MsgBlock) PrevBits(lb *BlockHeader, db store.DbImp, conf *config.Config) uint32 {
+	ph := int(lb.Height) - conf.MinerConfirmationWindow
+	if ph < 0 {
+		ph = 0
+	}
+	bh := &BlockHeader{}
+	if err := db.GetBK(store.BKHeight(uint32(ph)), bh); err != nil {
+		return 0
+	}
+	return CalculateWorkRequired(lb.Timestamp, bh.Timestamp, lb.Bits, conf)
+}
+
 //check recv block
 func (m *MsgBlock) CheckBlock(db store.DbImp) error {
-	has := db.ValidBK(m.Hash[:])
+	conf := config.GetConfig()
+	if len(m.Txs) == 0 {
+		return errors.New("miss tx data")
+	}
+	if !CheckProofOfWork(m.Hash, m.Bits, conf) {
+		return errors.New("block proof of work check error")
+	}
+	if lb := G.LastBlock(); lb != nil {
+		bits := uint32(0)
+		if (int(lb.Height)+1)%conf.MinerConfirmationWindow != 0 {
+			bits = lb.Bits
+		} else {
+			bits = m.PrevBits(lb, db, conf)
+		}
+		if m.Bits != bits {
+			return errors.New("block bits error")
+		}
+	} else if !m.IsGenesis() {
+		return errors.New("last block get error")
+	}
 	hvs := []HashID{}
 	bfee := Amount(0)
-	db.PushTxCacher(NewMemoryCacher(m.Count, time.Minute*10))
+	cfee := Amount(0)
+	db.PushTxCacher(NewCacher())
 	defer db.PopTxCacher()
-	//push current block tx
-	for _, v := range m.Txs {
+	for i, v := range m.Txs {
+		if i == 0 && !v.IsCoinBase() {
+			return errors.New("0 tx not coinbase")
+		}
 		if err := v.Check(); err != nil {
 			return fmt.Errorf("check block tx error %v", err)
 		}
-		if !has && db.HasTX(v.Hash[:]) {
+		if db.HasTX(v.Hash[:]) {
 			return errors.New("block tx exists,error")
 		}
-		if !has {
-			db.TopTxCacher().Set(v.Hash[:], v)
-		}
 		hvs = append(hvs, v.Hash)
-		if v.IsCoinBase() {
-			continue
-		}
 		if err := VerifyTX(v, db); err != nil {
 			return fmt.Errorf("verify tx error %v", err)
 		}
@@ -761,17 +801,31 @@ func (m *MsgBlock) CheckBlock(db store.DbImp) error {
 		if err != nil {
 			return fmt.Errorf("check tx amount error %v", err)
 		}
-		bfee += av
+		if v.IsCoinBase() {
+			cfee = av
+		} else {
+			bfee += av
+		}
+		//check success
+		db.TopTxCacher().Set(v.Hash[:], v)
+	}
+	if !cfee.IsRange() || !bfee.IsRange() {
+		return errors.New("check block fee error")
+	}
+	vfee := Amount(0)
+	if lb := G.LastBlock(); lb != nil {
+		vfee = GetCoinbaseReward(int(lb.Height + 1))
+	} else {
+		vfee = GetCoinbaseReward(0)
+	}
+	if vfee != (cfee - bfee) {
+		return errors.New("block amount error")
 	}
 	num := len(hvs)
-	bits := bitset.New(uint(num))
-	tree := NewMerkleTree(num).Build(hvs, bits)
+	tree := NewMerkleTree(num).Build(hvs, bitset.New(uint(num)))
 	root, _, _ := tree.Extract()
 	if !root.Equal(m.Merkle) {
 		return errors.New("Calc merkle id error")
-	}
-	if !bfee.IsRange() {
-		return errors.New("check block fee error")
 	}
 	return nil
 }

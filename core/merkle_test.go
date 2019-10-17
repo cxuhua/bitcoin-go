@@ -1,9 +1,7 @@
 package core
 
 import (
-	"bitcoin/store"
 	"bytes"
-	"context"
 	"encoding/binary"
 	"log"
 	"testing"
@@ -59,26 +57,6 @@ func TestSipHash(t *testing.T) {
 	h.Write(b8)
 	if h.Sum64() != 0x3f2acc7f57c29bdb {
 		t.Errorf("write 3 error")
-	}
-}
-
-func TestTreeFromDB(t *testing.T) {
-	err := store.UseSession(context.Background(), func(db store.DbImp) error {
-		bh := &BlockHeader{}
-		if err := db.GetBK(store.BKHeight(43281), bh); err != nil {
-			return err
-		}
-		bi := bh.ToBlock()
-		if err := bi.LoadTXS(db); err != nil {
-			return err
-		}
-		if err := bi.CheckBlock(db); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		panic(err)
 	}
 }
 

@@ -47,7 +47,10 @@ func (m *mongoDBImp) listSyncBK(v interface{}) error {
 func (m *mongoDBImp) lastBK(v interface{}) error {
 	opts := options.FindOne()
 	opts.SetSort(bson.M{"height": -1})
-	ret := m.blocks().FindOne(m, bson.M{}, opts)
+	cond := bson.M{
+		"count": bson.M{"$gt": 0},
+	}
+	ret := m.blocks().FindOne(m, cond, opts)
 	if err := ret.Err(); err != nil {
 		return err
 	}

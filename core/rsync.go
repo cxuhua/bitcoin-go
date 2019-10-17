@@ -364,22 +364,15 @@ func syncData(db store.DbImp, client *Client, conf *config.Config) {
 			ID:   NewHashID(conf.GenesisBlock),
 		})
 		client.WriteMsg(m)
-		return
-	}
-	if Headers.Len() == 0 {
-		Headers.Load(db)
-	}
-	if Headers.Len() == 0 {
+	} else if Headers.Len() == 0 {
 		m := NewMsgGetHeaders()
+		NewMsgGetBlocks()
 		m.AddHash(G.LastBlock().Hash)
 		client.WriteMsg(m)
-		return
-	}
-	if h := Headers.Front(); h != nil {
+	} else if h := Headers.Front(); h != nil {
 		m := NewMsgGetData()
 		m.AddHash(MSG_BLOCK, h.Hash)
 		client.WriteMsg(m)
-		return
 	}
 }
 

@@ -2,7 +2,6 @@ package core
 
 import (
 	"bitcoin/store"
-	"bytes"
 	"container/list"
 	"context"
 	"errors"
@@ -10,8 +9,6 @@ import (
 	"log"
 	"sync"
 	"time"
-
-	"go.mongodb.org/mongo-driver/mongo"
 )
 
 const (
@@ -23,6 +20,16 @@ type BlockHeaderList struct {
 	lv *list.List
 }
 
+func (l *BlockHeaderList) Remove() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.lv.Len() == 0 {
+		return
+	}
+	e := l.lv.Front()
+	l.lv.Remove(e)
+}
+
 func (l *BlockHeaderList) Front() *BlockHeader {
 	l.mu.Lock()
 	defer l.mu.Unlock()
@@ -30,9 +37,7 @@ func (l *BlockHeaderList) Front() *BlockHeader {
 		return nil
 	}
 	el := l.lv.Front()
-	fv := el.Value.(*BlockHeader)
-	l.lv.Remove(el)
-	return fv
+	return el.Value.(*BlockHeader)
 }
 
 func (l *BlockHeaderList) Push(h *BlockHeader) {
@@ -45,21 +50,6 @@ func (l *BlockHeaderList) Len() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return l.lv.Len()
-}
-
-//load not download block header
-func (l *BlockHeaderList) Load(db store.DbImp) error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-	return db.GetBK(store.ListSyncBK, store.IterFunc(func(cur *mongo.Cursor) error {
-		hv := &BlockHeader{}
-		err := cur.Decode(hv)
-		if err != nil {
-			return err
-		}
-		l.lv.PushBack(hv)
-		return nil
-	}))
 }
 
 func (l *BlockHeaderList) Pop() {
@@ -91,76 +81,55 @@ var (
 )
 
 func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
-	log.Println("Work id", wid, "recv block:", m.Hash, " from", c.Key())
-	//check block and block txs
-	if err := m.CheckBlock(db); err != nil {
-		return fmt.Errorf("check block error %v,ignore save", err)
-	}
-	//save block
-	bh := m.ToBlockHeader()
-	if bh.IsGenesis() {
-		err := db.Transaction(func(sdb store.DbImp) error {
+	return db.Transaction(func(sdb store.DbImp) error {
+		bh := m.ToBlockHeader()
+		//check block and block txs
+		if err := m.CheckBlock(sdb); err != nil {
+			return fmt.Errorf("check block error %v,ignore save", err)
+		} else if bh.IsGenesis() {
 			if err := sdb.SetBK(bh.Hash, bh); err != nil {
 				return fmt.Errorf("DB save block header error %v", err)
 			}
-			return m.SaveTXS(sdb)
-		})
-		if err != nil {
-			return err
-		}
-		G.SetLastBlock(bh)
-		Notice <- c
-		return nil
-	}
-	return db.Transaction(func(sdb store.DbImp) error {
-		if !sdb.HasBK(bh.Hash) {
-			lb := G.LastBlock()
-			if !bytes.Equal(bh.Prev, lb.Hash) {
+			if err := m.SaveTXS(sdb); err != nil {
+				return err
+			}
+			G.SetLastBlock(bh)
+			Notice <- c
+		} else {
+			if sdb.HasBK(bh.Hash) {
+				return errors.New("block exists,why download")
+			}
+			if !G.IsNext(bh) {
 				return errors.New("recv block,can't link prev block")
 			}
-			bh.Height = lb.Height + 1
 			if err := sdb.SetBK(bh.Hash, bh); err != nil {
 				return fmt.Errorf("DB setbk error %v", err)
 			}
 			if err := m.SaveTXS(sdb); err != nil {
 				return err
 			}
+			Headers.Remove()
 			G.SetLastBlock(bh)
-			return nil
-		} else {
-			v := store.SetValue{"count": bh.Count}
-			if err := sdb.SetBK(bh.Hash, v); err != nil {
-				return fmt.Errorf("DB set block tx count error %v", err)
-			}
-			if err := m.SaveTXS(sdb); err != nil {
-				return err
-			}
 			Notice <- c
-			return nil
 		}
+		log.Println("Work id", wid, "save block:", m.Hash, "height=", bh.Height, "from", c.Key(), "OK")
+		return nil
 	})
 }
 
 func processTX(wid int, db store.DbImp, c *Client, m *MsgTX) error {
 	//log.Println("Work id", wid, "recv tx=", m.Tx.Hash)
-	TxsMap.Set(&m.Tx)
+	//TxsMap.Set(&m.Tx)
 	return nil
 }
 
 func processHeaders(wid int, db store.DbImp, c *Client, m *MsgHeaders) error {
 	for _, v := range m.Headers {
-		lb := G.LastBlock()
 		bh := v.ToBlockHeader()
-		if !bytes.Equal(bh.Prev, lb.Hash) {
-			continue
+		if G.IsNextHeader(bh) {
+			Headers.Push(bh)
+			log.Println("get block header", NewHashID(bh.Hash))
 		}
-		bh.Height = lb.Height + 1
-		if err := db.SetBK(bh.Hash, bh); err != nil {
-			return fmt.Errorf("DB setbk error %v", err)
-		}
-		Headers.Push(bh)
-		G.SetLastBlock(bh)
-		log.Println("save blockheader", NewHashID(bh.Hash), bh.Height)
 	}
 	if Headers.Len() > 0 {
 		Notice <- c

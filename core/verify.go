@@ -5,6 +5,7 @@ import (
 	"bitcoin/store"
 	"errors"
 	"fmt"
+	"log"
 )
 
 var (
@@ -142,6 +143,7 @@ func VerifyTX(tx *TX, db store.DbImp) error {
 	for idx, in := range tx.Ins {
 		ptx, err := LoadTX(in.OutHash, db)
 		if err != nil {
+			log.Println("txid = ", tx.Hash)
 			return fmt.Errorf("load prev tx error %v", err)
 		}
 		if int(in.OutIndex) >= len(ptx.Outs) {

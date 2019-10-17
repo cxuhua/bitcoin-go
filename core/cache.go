@@ -93,6 +93,14 @@ func (c *networkCache) Set(id []byte, v interface{}) error {
 	return nil
 }
 
+func NewCacher() store.DbCacher {
+	return &memoryCacher{
+		txs:     map[string]*memoryElement{},
+		max:     int(^uint16(0)),
+		timeout: time.Hour * 24,
+	}
+}
+
 func NewMemoryCacher(max int, timeout time.Duration) store.DbCacher {
 	return &memoryCacher{
 		txs:     map[string]*memoryElement{},
