@@ -82,9 +82,11 @@ var (
 
 func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
 	return db.Transaction(func(sdb store.DbImp) error {
+		G.Lock()
+		defer G.Unlock()
 		bh := m.ToBlockHeader()
 		//check block and block txs
-		if err := m.CheckBlock(sdb); err != nil {
+		if err := m.CheckBlock(G.LastBlock(), sdb); err != nil {
 			return fmt.Errorf("check block error %v,ignore save", err)
 		} else if bh.IsGenesis() {
 			if err := sdb.SetBK(bh.Hash, bh); err != nil {
@@ -93,13 +95,13 @@ func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
 			if err := m.SaveTXS(sdb); err != nil {
 				return err
 			}
-			G.SetLastBlock(bh)
+			G.SetLast(bh)
 			Notice <- c
 		} else {
 			if sdb.HasBK(bh.Hash) {
 				return errors.New("block exists,why download")
 			}
-			if !G.IsNext(bh) {
+			if !G.IsNextBlock(bh) {
 				return errors.New("recv block,can't link prev block")
 			}
 			if err := sdb.SetBK(bh.Hash, bh); err != nil {
@@ -109,7 +111,7 @@ func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
 				return err
 			}
 			Headers.Remove()
-			G.SetLastBlock(bh)
+			G.SetLast(bh)
 			Notice <- c
 		}
 		log.Println("Work id", wid, "save block:", m.Hash, "height=", bh.Height, "from", c.Key(), "OK")

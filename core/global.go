@@ -13,6 +13,14 @@ type Global struct {
 	hb *BlockHeader
 }
 
+func (g *Global) Lock() {
+	g.mu.Lock()
+}
+
+func (g *Global) Unlock() {
+	g.mu.Unlock()
+}
+
 func (g *Global) IsNextHeader(bh *BlockHeader) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
@@ -26,9 +34,17 @@ func (g *Global) IsNextHeader(bh *BlockHeader) bool {
 	return ok
 }
 
-func (g *Global) IsNext(bh *BlockHeader) bool {
+func (g *Global) LastBlock() *BlockHeader {
+	return g.lb
+}
+
+func (g *Global) LastHash() []byte {
 	g.mu.Lock()
 	defer g.mu.Unlock()
+	return g.lb.Hash
+}
+
+func (g *Global) IsNextBlock(bh *BlockHeader) bool {
 	ok := bytes.Equal(bh.Prev[:], g.lb.Hash[:])
 	if ok {
 		bh.Height = g.lb.Height + 1
@@ -36,15 +52,13 @@ func (g *Global) IsNext(bh *BlockHeader) bool {
 	return ok
 }
 
-func (g *Global) LastBlock() *BlockHeader {
+func (g *Global) HasLast() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.lb
+	return g.lb != nil
 }
 
-func (g *Global) SetLastBlock(v *BlockHeader) {
-	g.mu.Lock()
-	defer g.mu.Unlock()
+func (g *Global) SetLast(v *BlockHeader) {
 	g.lb = v
 }
 
@@ -52,7 +66,7 @@ func (g *Global) Init(db store.DbImp) error {
 	//get last block
 	bh := &BlockHeader{}
 	if err := db.GetBK(store.NewestBK, bh); err == nil {
-		G.SetLastBlock(bh)
+		G.SetLast(bh)
 		log.Println("last block height", bh.Height, "hash=", NewHashID(bh.Hash))
 	}
 	//get not download block

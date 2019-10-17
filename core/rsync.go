@@ -335,7 +335,7 @@ func startconnect(ip IPPort) {
 func checkStatus(conf *config.Config) {
 	OutIps.Fastest(conf.MaxOutConn, true)
 	//log.Println("Out Count=", OutIps.Len(), "Addrs Count=", Addrs.Len())
-	log.Println("mempool txs count", TxsMap.Len())
+	//log.Println("mempool txs count", TxsMap.Len())
 }
 
 func processAddrs(addr *MsgAddr, conf *config.Config) {
@@ -357,7 +357,7 @@ func syncData(db store.DbImp, client *Client, conf *config.Config) {
 	if OutIps.Len() == 0 || client == nil {
 		return
 	}
-	if G.LastBlock() == nil {
+	if !G.HasLast() {
 		m := NewMsgGetData()
 		m.Add(Inventory{
 			Type: MSG_BLOCK,
@@ -367,7 +367,7 @@ func syncData(db store.DbImp, client *Client, conf *config.Config) {
 	} else if Headers.Len() == 0 {
 		m := NewMsgGetHeaders()
 		NewMsgGetBlocks()
-		m.AddHash(G.LastBlock().Hash)
+		m.AddHash(G.LastHash())
 		client.WriteMsg(m)
 	} else if h := Headers.Front(); h != nil {
 		m := NewMsgGetData()

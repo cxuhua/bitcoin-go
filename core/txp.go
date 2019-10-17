@@ -757,7 +757,7 @@ func (m *MsgBlock) PrevBits(lb *BlockHeader, db store.DbImp, conf *config.Config
 }
 
 //check recv block
-func (m *MsgBlock) CheckBlock(db store.DbImp) error {
+func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 	conf := config.GetConfig()
 	if len(m.Txs) == 0 {
 		return errors.New("miss tx data")
@@ -765,7 +765,7 @@ func (m *MsgBlock) CheckBlock(db store.DbImp) error {
 	if !CheckProofOfWork(m.Hash, m.Bits, conf) {
 		return errors.New("block proof of work check error")
 	}
-	if lb := G.LastBlock(); lb != nil {
+	if lb != nil {
 		bits := uint32(0)
 		if (int(lb.Height)+1)%conf.MinerConfirmationWindow != 0 {
 			bits = lb.Bits
@@ -813,7 +813,7 @@ func (m *MsgBlock) CheckBlock(db store.DbImp) error {
 		return errors.New("check block fee error")
 	}
 	vfee := Amount(0)
-	if lb := G.LastBlock(); lb != nil {
+	if lb != nil {
 		vfee = GetCoinbaseReward(int(lb.Height + 1))
 	} else {
 		vfee = GetCoinbaseReward(0)
