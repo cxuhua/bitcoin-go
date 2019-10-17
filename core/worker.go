@@ -99,7 +99,7 @@ func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
 			Notice <- c
 		} else {
 			if sdb.HasBK(bh.Hash) {
-				return errors.New("block exists,why download")
+				return errors.New("block exists,ignore save ,hash=" + NewHashID(bh.Hash).String())
 			}
 			if !G.IsNextBlock(bh) {
 				return errors.New("recv block,can't link prev block")
