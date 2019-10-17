@@ -17,11 +17,11 @@ var (
 )
 
 func IsNewestBK(id []byte) bool {
-	return len(id) == 1 && id[0] == 0
+	return len(id) == 1 && id[0] == NewestBK[0]
 }
 
 func IsBKHeight(id []byte) (uint64, bool) {
-	if len(id) == 9 && id[0] == 1 {
+	if len(id) == 9 && id[0] == UseBKHeight[0] {
 		v := binary.LittleEndian.Uint64(id[1:])
 		return v, true
 	}
