@@ -5,6 +5,8 @@ import (
 	"bitcoin/store"
 	"bytes"
 	"errors"
+
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type Inventory struct {
@@ -619,8 +621,8 @@ type BlockHeader struct {
 	Timestamp uint32 `bson:"time"`
 	Bits      uint32 `bson:"bits"`
 	Nonce     uint32 `bson:"nonce"`
-	Height    uint64 `bson:"height"`
-	Count     int    `bson:"count"` //tx count
+	Height    uint32 `bson:"height"`
+	Count     int    `bson:"count"` //tx count ,=0 not dowload
 }
 
 func NewBlockHeader() *BlockHeader {
@@ -629,6 +631,10 @@ func NewBlockHeader() *BlockHeader {
 	bh.Prev = make([]byte, len(HashID{}))
 	bh.Merkle = make([]byte, len(HashID{}))
 	return bh
+}
+
+func (b *BlockHeader) IsGenesis() bool {
+	return bytes.Equal(ZeroHashID[:], b.Hash)
 }
 
 func (b *BlockHeader) ToBlock() *MsgBlock {
@@ -660,19 +666,12 @@ func (m *MsgBlock) ToBlockHeader() *BlockHeader {
 
 //load txs from database
 func (m *MsgBlock) LoadTXS(db store.DbImp) error {
-	vs := make([]interface{}, m.Count)
-	for i, _ := range vs {
-		vs[i] = &TXHeader{}
-	}
-	if err := db.MulTX(vs, m.Hash[:]); err != nil {
-		return err
-	}
-	m.Txs = make([]*TX, m.Count)
-	for i, v := range vs {
-		txh := v.(*TXHeader)
-		m.Txs[i] = txh.ToTX()
-	}
-	return nil
+	m.Txs = []*TX{}
+	return db.GetTX(store.NewListBlockTxs(m.Hash[:]), store.IterFunc(func(cursor *mongo.Cursor) {
+		txh := TXHeader{}
+		cursor.Decode(&txh)
+		m.Txs = append(m.Txs, txh.ToTX())
+	}))
 }
 func (m *MsgBlock) PrevBlock(db store.DbImp) (*MsgBlock, error) {
 	return LoadBlock(m.Prev, db)
@@ -783,6 +782,13 @@ func (m *MsgGetData) Read(h *NetHeader) {
 	for i, _ := range m.Invs {
 		m.Invs[i].Read(h)
 	}
+}
+
+func (m *MsgGetData) AddHash(typ uint32, hv []byte) {
+	m.Invs = append(m.Invs, Inventory{
+		Type: typ,
+		ID:   NewHashID(hv),
+	})
 }
 func (m *MsgGetData) Add(inv Inventory) {
 	m.Invs = append(m.Invs, inv)

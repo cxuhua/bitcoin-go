@@ -73,7 +73,7 @@ type DbImp interface {
 	//delete tx
 	DelTX(id []byte) error
 	//multiple opt id != nil will read blockid =id txs and order by index
-	MulTX(v []interface{}, id ...[]byte) error
+	MulTX(v []interface{}) error
 	//get block raw data
 	GetBK(id []byte, v interface{}) error
 	//exists bk

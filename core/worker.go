@@ -10,6 +10,8 @@ import (
 	"log"
 	"sync"
 	"time"
+
+	"go.mongodb.org/mongo-driver/mongo"
 )
 
 const (
@@ -19,36 +21,30 @@ const (
 type BlockHeaderList struct {
 	mu sync.Mutex
 	lv *list.List
-	ch *BHeader
+	ch *BlockHeader
 	ct time.Time
 }
 
-func (l *BlockHeaderList) has(hv HashID) (*list.Element, bool) {
-	for e := l.lv.Front(); e != nil; e = e.Next() {
-		if cv := e.Value.(*BHeader); cv.Hash.Equal(hv) {
-			return e, true
-		}
-	}
-	return nil, false
-}
-
-func (l *BlockHeaderList) PushMany(hs []*BHeader) {
+func (l *BlockHeaderList) Front() *BlockHeader {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	for _, v := range hs {
-		if _, ok := l.has(v.Hash); ok {
-			continue
-		}
-		l.lv.PushBack(v)
+	if l.lv.Len() == 0 {
+		return nil
 	}
+	now := time.Now()
+	fv := l.lv.Front().Value.(*BlockHeader)
+	if l.ch == fv && now.Sub(l.ct) < time.Second*30 {
+		return nil
+	}
+	l.ch = fv
+	l.ct = time.Now()
+	return l.ch
 }
 
-func (l *BlockHeaderList) PushOne(h *BHeader) {
+func (l *BlockHeaderList) Push(h *BlockHeader) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if _, ok := l.has(h.Hash); !ok {
-		l.lv.PushBack(h)
-	}
+	l.lv.PushBack(h)
 }
 
 func (l *BlockHeaderList) Len() int {
@@ -57,11 +53,26 @@ func (l *BlockHeaderList) Len() int {
 	return l.lv.Len()
 }
 
-func (l *BlockHeaderList) Remove(hv HashID) {
+//load not download block header
+func (l *BlockHeaderList) Load(db store.DbImp) {
 	l.mu.Lock()
 	defer l.mu.Unlock()
-	if e, ok := l.has(hv); ok {
-		l.lv.Remove(e)
+	db.GetBK(store.ListSyncBK, store.IterFunc(func(cur *mongo.Cursor) {
+		hv := &BlockHeader{}
+		err := cur.Decode(hv)
+		if err != nil {
+			return
+		}
+		l.lv.PushBack(hv)
+	}))
+}
+
+func (l *BlockHeaderList) Pop() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.lv.Len() > 0 {
+		l.lv.Remove(l.lv.Front())
+		l.ch = nil
 	}
 }
 
@@ -87,10 +98,19 @@ var (
 func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
 	log.Println("Work id", wid, "recv block:", m.Hash)
 	bh := m.ToBlockHeader()
-	if err := db.SetBK(bh.Hash, bh); err != nil {
-		return fmt.Errorf("DB save block header error %v", err)
+	if bh.IsGenesis() {
+		if err := db.SetBK(bh.Hash, bh); err != nil {
+			return fmt.Errorf("DB save block header error %v", err)
+		}
+		G.SetLastBlock(bh)
+	} else {
+		v := store.SetValue{"count": bh.Count}
+		if err := db.SetBK(bh.Hash, v); err != nil {
+			return fmt.Errorf("DB set block tx count error %v", err)
+		}
+		Headers.Pop()
 	}
-	G.SetLastBlock(bh)
+	Notice <- NoticeRecvBlock
 	return nil
 }
 
@@ -110,11 +130,12 @@ func processHeaders(wid int, db store.DbImp, c *Client, m *MsgHeaders) error {
 		if err := db.SetBK(bh.Hash, bh); err != nil {
 			return fmt.Errorf("DB setbk error %v", err)
 		}
+		Headers.Push(bh)
 		G.SetLastBlock(bh)
 		log.Println("save blockheader", NewHashID(bh.Hash), bh.Height)
 	}
-	if len(m.Headers) > 0 {
-		Notice <- NoticeSaveHeadersOK
+	if Headers.Len() > 0 {
+		Notice <- NoticeSaveHeaders
 	}
 	return nil
 }

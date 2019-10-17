@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -19,10 +21,29 @@ func (m *mongoDBImp) DelBK(id []byte) error {
 	return err
 }
 
+func (m *mongoDBImp) listSyncBK(v interface{}) error {
+	fn, ok := v.(IterFunc)
+	if !ok {
+		return errors.New("v args type error,ListSyncFunc")
+	}
+	opts := options.Find()
+	opts.SetSort(bson.M{"height": 1})
+	opts.SetLimit(200)
+	iter, err := m.blocks().Find(m, bson.M{"count": 0}, opts)
+	if err != nil {
+		return err
+	}
+	defer iter.Close(m)
+	for iter.Next(m) {
+		fn(iter)
+	}
+	return nil
+}
+
 //last block
 func (m *mongoDBImp) lastBK(v interface{}) error {
 	opts := options.FindOne()
-	opts.Sort = bson.M{"height": -1}
+	opts.SetSort(bson.M{"height": -1})
 	ret := m.blocks().FindOne(m, bson.M{}, opts)
 	if err := ret.Err(); err != nil {
 		return err
@@ -32,7 +53,9 @@ func (m *mongoDBImp) lastBK(v interface{}) error {
 
 func (m *mongoDBImp) GetBK(id []byte, v interface{}) error {
 	cond := bson.M{}
-	if IsNewestBK(id) {
+	if IsListSyncBK(id) {
+		return m.listSyncBK(v)
+	} else if IsNewestBK(id) {
 		return m.lastBK(v)
 	} else if hv, ok := IsBKHeight(id); ok {
 		cond["height"] = hv

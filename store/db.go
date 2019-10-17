@@ -10,28 +10,48 @@ import (
 )
 
 var (
-	client      *mongo.Client = nil
-	dbonce                    = sync.Once{}
-	NewestBK                  = []byte{0} //use GetBK method
-	UseBKHeight               = []byte{1} //1-8bytes height=9 byte LittleEndian
+	client       *mongo.Client = nil
+	dbonce                     = sync.Once{}
+	NewestBK                   = []byte{0} //use GetBK method
+	UseBKHeight                = []byte{1} //5bytes height=4 byte LittleEndian
+	ListSyncBK                 = []byte{2}
+	ListBlockTxs               = []byte{0} //33bytes [1:] = block id
 )
+
+type IterFunc func(cursor *mongo.Cursor)
+
+func IsListBlockTxs(id []byte) ([]byte, bool) {
+	b := len(id) == 33 && id[0] == ListBlockTxs[0]
+	return id[1:], b
+}
+
+func NewListBlockTxs(bid []byte) []byte {
+	b := make([]byte, 33)
+	b[0] = ListBlockTxs[0]
+	copy(b[1:], bid)
+	return b
+}
+
+func IsListSyncBK(id []byte) bool {
+	return len(id) == 1 && id[0] == ListSyncBK[0]
+}
 
 func IsNewestBK(id []byte) bool {
 	return len(id) == 1 && id[0] == NewestBK[0]
 }
 
-func IsBKHeight(id []byte) (uint64, bool) {
-	if len(id) == 9 && id[0] == UseBKHeight[0] {
-		v := binary.LittleEndian.Uint64(id[1:])
+func IsBKHeight(id []byte) (uint32, bool) {
+	if len(id) == 5 && id[0] == UseBKHeight[0] {
+		v := binary.LittleEndian.Uint32(id[1:])
 		return v, true
 	}
 	return 0, false
 }
 
-func BKHeight(h uint64) []byte {
-	b := make([]byte, 9)
+func BKHeight(h uint32) []byte {
+	b := make([]byte, 5)
 	b[0] = 1
-	binary.LittleEndian.PutUint64(b[1:], h)
+	binary.LittleEndian.PutUint32(b[1:], h)
 	return b
 }
 

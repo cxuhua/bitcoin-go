@@ -1,6 +1,8 @@
 package store
 
 import (
+	"errors"
+
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -19,13 +21,35 @@ func (m *mongoDBImp) DelTX(id []byte) error {
 	return err
 }
 
-//get tx data
-func (m *mongoDBImp) GetTX(id []byte, v interface{}) error {
-	ret := m.txs().FindOne(m, bson.M{"_id": id})
-	if err := ret.Err(); err != nil {
+func (m *mongoDBImp) listBlockTxs(bid []byte, v interface{}) error {
+	fn, ok := v.(IterFunc)
+	if !ok {
+		return errors.New("v args type error,ListSyncFunc")
+	}
+	opts := options.Find()
+	opts.SetSort(bson.M{"index": 1})
+	iter, err := m.txs().Find(m, bson.M{"block": bid}, opts)
+	if err != nil {
 		return err
 	}
-	return ret.Decode(v)
+	defer iter.Close(m)
+	for iter.Next(m) {
+		fn(iter)
+	}
+	return nil
+}
+
+//get tx data
+func (m *mongoDBImp) GetTX(id []byte, v interface{}) error {
+	if bid, ok := IsListBlockTxs(id); ok {
+		return m.listBlockTxs(bid, v)
+	} else {
+		ret := m.txs().FindOne(m, bson.M{"_id": id})
+		if err := ret.Err(); err != nil {
+			return err
+		}
+		return ret.Decode(v)
+	}
 }
 
 //check tx exists
@@ -34,34 +58,18 @@ func (m *mongoDBImp) HasTX(id []byte) bool {
 	return ret.Err() == nil
 }
 
-//return blockid txs if id exists
-func (m *mongoDBImp) MulTX(vs []interface{}, id ...[]byte) error {
-	if len(id) == 1 {
-		opts := options.Find().SetSort(bson.M{"index": 1})
-		cur, err := m.txs().Find(m, bson.M{"block": id[0]}, opts)
-		if err != nil {
-			return err
-		}
-		for i := 0; i < len(vs) && cur.Next(m); i++ {
-			err = cur.Decode(vs[i])
-			if err != nil {
-				return err
-			}
-		}
+func (m *mongoDBImp) MulTX(vs []interface{}) error {
+	opts := options.BulkWrite()
+	if len(vs) == 0 {
 		return nil
-	} else {
-		opts := options.BulkWrite()
-		if len(vs) == 0 {
-			return nil
-		}
-		mvs := []mongo.WriteModel{}
-		for _, v := range vs {
-			vv := mongo.NewInsertOneModel().SetDocument(v)
-			mvs = append(mvs, vv)
-		}
-		_, err := m.txs().BulkWrite(m, mvs, opts)
-		return err
 	}
+	mvs := []mongo.WriteModel{}
+	for _, v := range vs {
+		vv := mongo.NewInsertOneModel().SetDocument(v)
+		mvs = append(mvs, vv)
+	}
+	_, err := m.txs().BulkWrite(m, mvs, opts)
+	return err
 }
 
 //save tans data

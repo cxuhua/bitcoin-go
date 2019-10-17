@@ -23,10 +23,13 @@ func (g *Global) SetLastBlock(v *BlockHeader) {
 }
 
 func (g *Global) Init(db store.DbImp) error {
+	//get last block
 	bh := &BlockHeader{}
 	if err := db.GetBK(store.NewestBK, bh); err == nil {
 		g.lnblock = bh
+		Headers.Load(db)
 	}
+	//get not download block
 	return nil
 }
 

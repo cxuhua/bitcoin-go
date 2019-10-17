@@ -100,7 +100,8 @@ const (
 )
 
 var (
-	SizeError = errors.New("data size error")
+	SizeError  = errors.New("data size error")
+	ZeroHashID = HashID{}
 )
 
 func HASH256To(b []byte, h *HashID) HashID {

@@ -2,6 +2,7 @@ package core
 
 import (
 	"bitcoin/config"
+	"bitcoin/store"
 	"bitcoin/util"
 	"context"
 	"fmt"
@@ -329,15 +330,16 @@ func processAddrs(addr *MsgAddr) {
 }
 
 const (
-	NoticeSaveHeadersOK = 1
+	NoticeSaveHeaders = 1
+	NoticeRecvBlock   = 2
 )
 
 var (
-	Notice = make(chan int, 10)
-	Blocks = NewBlockHeaderList()
+	Notice  = make(chan int, 10)
+	Headers = NewBlockHeaderList()
 )
 
-func syncBlock(conf *config.Config) {
+func syncData(db store.DbImp, conf *config.Config) {
 	if OutIps.Len() == 0 {
 		return
 	}
@@ -348,10 +350,22 @@ func syncBlock(conf *config.Config) {
 			ID:   NewHashID(conf.GenesisBlock),
 		})
 		OutIps.AnyWrite(m)
-	} else if Blocks.Len() == 0 {
+		return
+	}
+	if Headers.Len() == 0 {
+		Headers.Load(db)
+	}
+	if Headers.Len() == 0 {
 		m := NewMsgGetHeaders()
 		m.AddHash(G.LastBlock().Hash)
 		OutIps.AnyWrite(m)
+		return
+	}
+	if h := Headers.Front(); h != nil {
+		m := NewMsgGetData()
+		m.AddHash(MSG_BLOCK, h.Hash)
+		OutIps.AnyWrite(m)
+		return
 	}
 }
 
@@ -360,7 +374,7 @@ func StartDispatch(ctx context.Context) {
 		MWG.Done()
 	}()
 	MWG.Add(1)
-	mfx := func() {
+	mfx := func(db store.DbImp) error {
 		log.Println("dispatch start")
 		defer func() {
 			if err := recover(); err != nil {
@@ -372,15 +386,12 @@ func StartDispatch(ctx context.Context) {
 		stimer := time.NewTimer(time.Second * 10)
 		for {
 			select {
-			case v := <-Notice:
-				switch v {
-				case NoticeSaveHeadersOK:
-					stimer.Reset(time.Millisecond * 50)
-				}
+			case <-Notice:
+				stimer.Reset(time.Millisecond * 10)
 			case addrs := <-RecvAddr:
 				processAddrs(addrs)
 			case <-stimer.C:
-				syncBlock(conf)
+				syncData(db, conf)
 				stimer.Reset(time.Second * 10)
 			case <-ctimer.C:
 				checkStatus(conf)
@@ -388,13 +399,14 @@ func StartDispatch(ctx context.Context) {
 			case ip := <-IpChan:
 				startconnect(ip)
 			case <-ctx.Done():
-				log.Println("dispatch stop", ctx.Err())
-				return
+				return ctx.Err()
 			}
 		}
 	}
 	for ctx.Err() != context.Canceled {
 		time.Sleep(time.Second * 3)
-		mfx()
+		store.UseSession(ctx, func(db store.DbImp) error {
+			return mfx(db)
+		})
 	}
 }
