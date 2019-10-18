@@ -5,7 +5,6 @@ import (
 	"bitcoin/store"
 	"errors"
 	"fmt"
-	"log"
 )
 
 var (
@@ -141,15 +140,10 @@ func VerifyTX(tx *TX, db store.DbImp) error {
 		return nil
 	}
 	for idx, in := range tx.Ins {
-		ptx, err := LoadTX(in.OutHash, db)
+		out, err := in.OutTx(db)
 		if err != nil {
-			log.Println("txid = ", tx.Hash)
-			return fmt.Errorf("load prev tx error %v", err)
+			return fmt.Errorf("load ref out error %v", err)
 		}
-		if int(in.OutIndex) >= len(ptx.Outs) {
-			return errors.New("out index out bound")
-		}
-		out := ptx.Outs[in.OutIndex]
 		typ := CheckTXType(in, out)
 		if typ == TX_UNKNOW {
 			return fmt.Errorf("in %d checktype not support", idx)

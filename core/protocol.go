@@ -375,7 +375,7 @@ func NewMsgVersion(sip IPPort, dip IPPort) *MsgVersion {
 	m.DAddr = NewAddress(SERVICE_NETWORK, dip)
 	util.SetRandInt(&m.Nonce)
 	m.SubVer = conf.SubVer
-	m.Height = 0
+	m.Height = G.LastHeight()
 	m.Relay = 1
 	return m
 }

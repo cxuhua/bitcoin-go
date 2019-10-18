@@ -1,6 +1,7 @@
 package script
 
 import (
+	"bitcoin/util"
 	"encoding/binary"
 	"errors"
 )
@@ -180,31 +181,99 @@ func (s Script) IsPushOnly() bool {
 	return true
 }
 
+func (s Script) GetAddress() string {
+	var ab []byte
+	if s.IsP2PK(&ab) || s.IsP2PKH(&ab) {
+		return util.P2PKHAddress(ab)
+	}
+	if s.IsP2SH(&ab) {
+		return util.P2SHAddress(ab)
+	}
+	if s.IsP2WSH(&ab) {
+		return util.BECH32Address(ab)
+	}
+	return ""
+}
+
 func (s Script) IsNull() bool {
 	return s.Len() >= 1 && s[0] == OP_RETURN && NewScript(s[1:]).IsPushOnly()
 }
 
-func (s Script) IsP2PK() bool {
-	return (s.Len() == COMPRESSED_PUBLIC_KEY_SIZE+2 && s[0] == COMPRESSED_PUBLIC_KEY_SIZE && s[34] == OP_CHECKSIG) || (s.Len() == PUBLIC_KEY_SIZE+2 && s[0] == PUBLIC_KEY_SIZE && s[66] == OP_CHECKSIG)
+func (s Script) IsP2PK(v ...*[]byte) bool {
+	b := s.Len() == COMPRESSED_PUBLIC_KEY_SIZE+2 && s[0] == COMPRESSED_PUBLIC_KEY_SIZE && s[34] == OP_CHECKSIG
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(1, 33)
+		}
+		return b
+	}
+	b = s.Len() == PUBLIC_KEY_SIZE+2 && s[0] == PUBLIC_KEY_SIZE && s[66] == OP_CHECKSIG
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(1, 66)
+		}
+		return b
+	}
+	return b
 }
 
 //out || in
-func (s Script) IsP2WPKH() bool {
-	return (s.Len() == 22 && s[0] == OP_0 && s[1] == byte(s.Len()-2)) || (s.Len() == 23 && s[0] == 0x16 && s[1] == OP_0 && s[2] == byte(s.Len()-3))
+func (s Script) IsP2WPKH(v ...*[]byte) bool {
+	b := s.Len() == 22 && s[0] == OP_0 && s[1] == byte(s.Len()-2)
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(2, 22)
+		}
+		return b
+	}
+	b = s.Len() == 23 && s[0] == 0x16 && s[1] == OP_0 && s[2] == byte(s.Len()-3)
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(2, 22)
+		}
+		return b
+	}
+	return b
 }
 
 //for out
-func (s Script) IsP2PKH() bool {
-	return s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
+func (s Script) IsP2PKH(v ...*[]byte) bool {
+	b := s.Len() == 25 && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(3, 23)
+		}
+	}
+	return b
 }
 
-func (s Script) IsP2SH() bool {
-	return s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
+func (s Script) IsP2SH(v ...*[]byte) bool {
+	b := s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(2, 22)
+		}
+	}
+	return b
 }
 
 //out || in
-func (s Script) IsP2WSH() bool {
-	return (s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20) || (s.Len() == 35 && s[0] == 34 && s[1] == OP_0 && s[2] == 0x20)
+func (s Script) IsP2WSH(v ...*[]byte) bool {
+	b := s.Len() == 34 && s[0] == OP_0 && s[1] == 0x20
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(2, 34)
+		}
+		return b
+	}
+	b = s.Len() == 35 && s[0] == 34 && s[1] == OP_0 && s[2] == 0x20
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(3, 35)
+		}
+		return b
+	}
+	return b
 }
 
 //return lessnum,pubnum

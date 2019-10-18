@@ -1,9 +1,20 @@
 package core
 
 import (
-	"log"
 	"testing"
 )
+
+func TestUIHashMake(t *testing.T) {
+	xx := NewUIHash(0xff311223344)
+	yy := NewHashID("ff311223344").ToUHash()
+	if !xx.Equal(yy) {
+		t.Errorf("test xx yy equal")
+	}
+	zz := NewUIHash("ff311223344")
+	if !yy.Equal(zz) {
+		t.Errorf("test yy zz equal")
+	}
+}
 
 func TestU32HashMul(t *testing.T) {
 	x1 := NewUIHash("7D1DE5EAF9B156D53208F033B5AA8122D2d2355d5e12292b121156cfdb4a529c")
@@ -73,7 +84,6 @@ func TestSetCompact(t *testing.T) {
 func TestHashEqual(t *testing.T) {
 	v1 := NewHashID("0101000000000000000000000000000000000000000000000000000000001234")
 	v2 := v1.ToUHash().ToHashID()
-	log.Println(v1.ToUHash())
 	if !v1.Equal(v2) {
 		t.Errorf("test Equal failed")
 	}

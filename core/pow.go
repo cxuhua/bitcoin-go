@@ -6,7 +6,8 @@ import (
 )
 
 // Check whether a block hash satisfies the proof-of-work requirement specified by nBits
-func CheckProofOfWork(hash HashID, bits uint32, conf *config.Config) bool {
+func CheckProofOfWork(hash HashID, bits uint32) bool {
+	conf := config.GetConfig()
 	h := UIHash{}
 	n, o := h.SetCompact(bits)
 	if n {
@@ -29,7 +30,8 @@ func CheckProofOfWork(hash HashID, bits uint32, conf *config.Config) bool {
 //ct = lastBlock blockTime
 //pt = lastBlock - 2016 + 1 blockTime
 //pw = lastBlock's bits
-func CalculateWorkRequired(ct uint32, pt uint32, pw uint32, conf *config.Config) uint32 {
+func CalculateWorkRequired(ct uint32, pt uint32, pw uint32) uint32 {
+	conf := config.GetConfig()
 	span := uint32(conf.PowTargetTimespan)
 	limit := NewUIHash(conf.PowLimit)
 	sub := ct - pt

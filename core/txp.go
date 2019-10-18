@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"log"
 
 	"github.com/willf/bitset"
 
@@ -92,6 +93,14 @@ type TxOut struct {
 	Script *script.Script
 }
 
+func (m *TxOut) ToMoneys(txid HashID, idx uint32) *Moneys {
+	mv := NewMoneys()
+	mv.Id = NewMoneyId(txid, idx)
+	mv.Addr = m.Script.GetAddress()
+	mv.Value = m.Value
+	return mv
+}
+
 func (m *TxOut) Clone() *TxOut {
 	v := &TxOut{}
 	v.Value = m.Value
@@ -115,6 +124,20 @@ type TxIn struct {
 	Script   *script.Script
 	Sequence uint32
 	Witness  *TxWitnesses
+}
+
+func (m *TxIn) OutTx(db store.DbImp) (*TxOut, error) {
+	if m.OutHash.IsZero() {
+		return nil, errors.New("coinbase first txin,No previous out")
+	}
+	tx, err := LoadTX(m.OutHash, db)
+	if err != nil {
+		return nil, err
+	}
+	if int(m.OutIndex) >= len(tx.Outs) {
+		return nil, errors.New("out index outbound pre tx outs")
+	}
+	return tx.Outs[m.OutIndex], nil
 }
 
 func (m *TxIn) Clone() *TxIn {
@@ -265,7 +288,7 @@ func NewTXFrom(tx *TX) *TXHeader {
 }
 
 //check tx ,return trans fee
-func (m *TX) CheckAmount(db store.DbImp) (Amount, error) {
+func (m *TX) GetFee(db store.DbImp) (Amount, error) {
 	iv := Amount(0)
 	ov := Amount(0)
 	if m.IsCoinBase() {
@@ -278,14 +301,10 @@ func (m *TX) CheckAmount(db store.DbImp) (Amount, error) {
 		return ov, nil
 	}
 	for _, v := range m.Ins {
-		ptx, err := LoadTX(v.OutHash, db)
+		out, err := v.OutTx(db)
 		if err != nil {
 			return 0, err
 		}
-		if int(v.OutIndex) >= len(ptx.Outs) {
-			return 0, errors.New("out tx miss")
-		}
-		out := ptx.Outs[v.OutIndex]
 		iv += Amount(out.Value)
 	}
 	if !iv.IsRange() {
@@ -419,7 +438,17 @@ func (m *TX) GetValueOut() Amount {
 }
 
 func (m *TX) IsCoinBase() bool {
-	return len(m.Ins) > 0 && m.Ins[0].OutHash.IsZero()
+	if len(m.Ins) <= 0 {
+		return false
+	}
+	if !m.Ins[0].OutHash.IsZero() {
+		return false
+	}
+	if m.Ins[0].Script == nil {
+		return false
+	}
+	sl := m.Ins[0].Script.Len()
+	return sl >= 2 && sl <= 100
 }
 
 func (m *TX) ReadWitnesses(h *NetHeader) {
@@ -744,43 +773,65 @@ func (b *MsgBlock) IsGenesis() bool {
 	return bytes.Equal(ZeroHashID[:], b.Prev[:]) && bytes.Equal(gid[:], b.Hash[:])
 }
 
-func (m *MsgBlock) PrevBits(lb *BlockHeader, db store.DbImp, conf *config.Config) uint32 {
-	ph := int(lb.Height) - conf.MinerConfirmationWindow
-	if ph < 0 {
-		ph = 0
-	}
+func (m *MsgBlock) GetAncestor(h int, db store.DbImp) (*BlockHeader, error) {
 	bh := &BlockHeader{}
-	if err := db.GetBK(store.BKHeight(uint32(ph)), bh); err != nil {
-		return 0
+	err := db.GetBK(store.BKHeight(uint32(h)), bh)
+	return bh, err
+}
+
+//get prev bits
+func (m *MsgBlock) prevBits(lb *BlockHeader, db store.DbImp) uint32 {
+	conf := config.GetConfig()
+	hfv := int(lb.Height) - conf.DiffAdjusInterval() + 1
+	if hfv < 0 {
+		log.Panicf("first height %d error", hfv)
 	}
-	return CalculateWorkRequired(lb.Timestamp, bh.Timestamp, lb.Bits, conf)
+	bh, err := m.GetAncestor(hfv, db)
+	if err != nil {
+		log.Panicf("get block for height %d error", hfv)
+	}
+	return CalculateWorkRequired(lb.Timestamp, bh.Timestamp, lb.Bits)
+}
+
+//check proof of work return height
+func (m *MsgBlock) checkBits(lb *BlockHeader, db store.DbImp) (int, error) {
+	conf := config.GetConfig()
+	if !CheckProofOfWork(m.Hash, m.Bits) {
+		return 0, errors.New("block proof of work check error")
+	}
+	height := 0
+	if lb != nil {
+		dav := conf.DiffAdjusInterval()
+		bits := uint32(0)
+		if (int(lb.Height)+1)%dav != 0 {
+			bits = lb.Bits
+		} else {
+			bits = m.prevBits(lb, db)
+		}
+		if m.Bits != bits {
+			return 0, errors.New("block bits error")
+		}
+		height = int(lb.Height + 1)
+	} else if !m.IsGenesis() {
+		return 0, errors.New("last block get error")
+	}
+	return height, nil
 }
 
 //check recv block
 func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
-	conf := config.GetConfig()
+	txids := []HashID{}
 	if len(m.Txs) == 0 {
 		return errors.New("miss tx data")
 	}
-	if !CheckProofOfWork(m.Hash, m.Bits, conf) {
-		return errors.New("block proof of work check error")
+	height, err := m.checkBits(lb, db)
+	if err != nil {
+		return err
 	}
-	if lb != nil {
-		bits := uint32(0)
-		if (int(lb.Height)+1)%conf.MinerConfirmationWindow != 0 {
-			bits = lb.Bits
-		} else {
-			bits = m.PrevBits(lb, db, conf)
-		}
-		if m.Bits != bits {
-			return errors.New("block bits error")
-		}
-	} else if !m.IsGenesis() {
-		return errors.New("last block get error")
+	bfee, vfee, cfee := Amount(0), GetCoinbaseReward(height), Amount(0)
+	if !vfee.IsRange() {
+		return errors.New("get coinbase reward error")
 	}
-	hvs := []HashID{}
-	bfee := Amount(0)
-	cfee := Amount(0)
 	db.PushTxCacher(NewCacher())
 	defer db.PopTxCacher()
 	for i, v := range m.Txs {
@@ -793,11 +844,11 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 		if db.HasTX(v.Hash[:]) {
 			return errors.New("block tx exists,error")
 		}
-		hvs = append(hvs, v.Hash)
+		txids = append(txids, v.Hash)
 		if err := VerifyTX(v, db); err != nil {
 			return fmt.Errorf("verify tx error %v", err)
 		}
-		av, err := v.CheckAmount(db)
+		av, err := v.GetFee(db)
 		if err != nil {
 			return fmt.Errorf("check tx amount error %v", err)
 		}
@@ -806,24 +857,18 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 		} else {
 			bfee += av
 		}
-		//check success
 		db.TopTxCacher().Set(v.Hash[:], v)
 	}
 	if !cfee.IsRange() || !bfee.IsRange() {
 		return errors.New("check block fee error")
 	}
-	vfee := Amount(0)
-	if lb != nil {
-		vfee = GetCoinbaseReward(int(lb.Height + 1))
-	} else {
-		vfee = GetCoinbaseReward(0)
-	}
 	if vfee != (cfee - bfee) {
 		return errors.New("block amount error")
 	}
-	num := len(hvs)
-	tree := NewMerkleTree(num).Build(hvs, bitset.New(uint(num)))
-	root, _, _ := tree.Extract()
+	root, _, _ := BuildMerkleTree(txids).Extract()
+	if root.IsZero() {
+		return errors.New("merkle tree root error")
+	}
 	if !root.Equal(m.Merkle) {
 		return errors.New("Calc merkle id error")
 	}
@@ -833,13 +878,13 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 //load txs from database
 func (m *MsgBlock) LoadTXS(db store.DbImp) error {
 	m.Txs = []*TX{}
-	err := db.GetTX(store.NewListBlockTxs(m.Hash[:]), store.IterFunc(func(cur *mongo.Cursor) error {
+	err := db.GetTX(store.NewListBlockTxs(m.Hash[:]), store.IterFunc(func(cur *mongo.Cursor) (bool, error) {
 		txh := TXHeader{}
 		if err := cur.Decode(&txh); err != nil {
-			return err
+			return true, err
 		}
 		m.Txs = append(m.Txs, txh.ToTX())
-		return nil
+		return true, nil
 	}))
 	m.Count = len(m.Txs)
 	return err

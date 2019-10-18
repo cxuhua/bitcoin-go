@@ -34,9 +34,10 @@ func (m *mongoDBImp) listBlockTxs(bid []byte, v interface{}) error {
 	}
 	defer iter.Close(m)
 	for iter.Next(m) {
-		err := fn(iter)
-		if err != nil {
+		if b, err := fn(iter); err != nil {
 			return err
+		} else if !b {
+			break
 		}
 	}
 	return nil
@@ -84,7 +85,7 @@ func (m *mongoDBImp) SetTX(id []byte, v interface{}) error {
 			ds[k] = v
 		}
 		if len(ds) > 0 {
-			_, err := m.blocks().UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
+			_, err := m.txs().UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
 			return err
 		}
 	case SetValue:

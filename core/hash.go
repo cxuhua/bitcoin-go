@@ -24,6 +24,10 @@ func NewUIHash(v interface{}) UIHash {
 	return n
 }
 
+func (h UIHash) Equal(v UIHash) bool {
+	return h.Cmp(v) == 0
+}
+
 func (h UIHash) ToDouble() float64 {
 	ret := float64(0)
 	fact := float64(1)
@@ -42,9 +46,13 @@ func (h *UIHash) SetValue(v interface{}) {
 	case int32:
 		h[0] = uint32(v.(int32))
 	case uint:
-		h[0] = uint32(v.(uint))
+		cv := uint64(v.(uint))
+		h[0] = uint32(cv)
+		h[1] = uint32(cv >> 32)
 	case int:
-		h[0] = uint32(v.(int))
+		cv := uint64(v.(int))
+		h[0] = uint32(cv)
+		h[1] = uint32(cv >> 32)
 	case int64:
 		cv := v.(int64)
 		h[0] = uint32(cv)
@@ -53,8 +61,37 @@ func (h *UIHash) SetValue(v interface{}) {
 		cv := v.(uint64)
 		h[0] = uint32(cv)
 		h[1] = uint32(cv >> 32)
+	case string:
+		str := v.(string)
+		if len(str)%2 != 0 {
+			str = "0" + str
+		}
+		sv, err := hex.DecodeString(str)
+		if err != nil {
+			panic(err)
+		}
+		vl := ((len(sv) + 3) / 4)
+		bv := make([]byte, vl*4)
+		for i := 0; i < len(sv); i++ {
+			bv[i] = sv[len(sv)-i-1]
+		}
+		ui := UIHash{}
+		for i := 0; i < vl; i++ {
+			ui[i] = ByteOrder.Uint32(bv[i*4 : i*4+4])
+		}
+		*h = ui
+	case []byte:
+		sv := v.([]byte)
+		vl := ((len(sv) + 3) / 4)
+		bv := make([]byte, vl*4)
+		copy(bv, sv)
+		ui := UIHash{}
+		for i := 0; i < vl; i++ {
+			ui[i] = ByteOrder.Uint32(bv[i*4 : i*4+4])
+		}
+		*h = ui
 	default:
-		*h = NewHashID(v).ToUHash()
+		panic(errors.New("v type error" + reflect.TypeOf(v).String()))
 	}
 }
 

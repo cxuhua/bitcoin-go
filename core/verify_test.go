@@ -3,6 +3,7 @@ package core
 import (
 	"bitcoin/store"
 	"context"
+	"fmt"
 	"testing"
 )
 
@@ -14,6 +15,11 @@ func TestP2WPKHSign(t *testing.T) {
 		tx2, err := LoadTX(id, db)
 		if err != nil {
 			return err
+		}
+		for i, v := range tx2.Outs {
+			if i == 0 && v.Script.GetAddress() != "395MUYNnnhaUDhm4VDSKn7jtafQbU5kXRB" {
+				return fmt.Errorf("get out %d address", i)
+			}
 		}
 		return VerifyTX(tx2, db)
 	})
@@ -30,6 +36,14 @@ func TestP2SHMSIGSign(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		for i, v := range tx2.Outs {
+			if i == 0 && v.Script.GetAddress() != "3AAhq47sBv78RWNTWF5vsAeDdWmA2EqV88" {
+				return fmt.Errorf("get out %d address", i)
+			}
+			if i == 1 && v.Script.GetAddress() != "3BMEXQxztwFkN3E6FSf3VuGNTeUQzG41Vf" {
+				return fmt.Errorf("get out %d address", i)
+			}
+		}
 		return VerifyTX(tx2, db)
 	})
 	if err != nil {
@@ -44,6 +58,14 @@ func TestP2WSHMSIGSign(t *testing.T) {
 		tx2, err := LoadTX(id, db)
 		if err != nil {
 			return err
+		}
+		for i, v := range tx2.Outs {
+			if i == 0 && v.Script.GetAddress() != "3EMvHQQrqHuX8vDBtW6SATSdVYPX2Yc529" {
+				return fmt.Errorf("get out %d address", i)
+			}
+			if i == 1 && v.Script.GetAddress() != "bc1qwqdg6squsna38e46795at95yu9atm8azzmyvckulcc7kytlcckxswvvzej" {
+				return fmt.Errorf("get out %d address", i)
+			}
 		}
 		return VerifyTX(tx2, db)
 	})
@@ -60,6 +82,14 @@ func TestP2SHWPKHSign(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		for i, v := range tx2.Outs {
+			if i == 0 && v.Script.GetAddress() != "3GDiJ4gRqnzAws1bFvkBwimh8Pykx5cUPi" {
+				return fmt.Errorf("get out %d address", i)
+			}
+			if i == 1 && v.Script.GetAddress() != "3FAX1sAtk1NTVpjLuNYJEp9D489ZvrRsvW" {
+				return fmt.Errorf("get out %d address", i)
+			}
+		}
 		return VerifyTX(tx2, db)
 	})
 	if err != nil {
@@ -75,6 +105,14 @@ func TestP2PKSign(t *testing.T) {
 		if err != nil {
 			return err
 		}
+		for i, v := range tx2.Outs {
+			if i == 0 && v.Script.GetAddress() != "1VayNert3x1KzbpzMGt2qdqrAThiRovi8" {
+				return fmt.Errorf("get out %d address", i)
+			}
+			if i == 1 && v.Script.GetAddress() != "1AvxGSFo8sVJKkfwHhtt6stHyuKUyLaKZp" {
+				return fmt.Errorf("get out %d address", i)
+			}
+		}
 		return VerifyTX(tx2, db)
 	})
 	if err != nil {
@@ -89,6 +127,14 @@ func TestP2PKHSign(t *testing.T) {
 		tx2, err := LoadTX(id, db)
 		if err != nil {
 			return err
+		}
+		for i, v := range tx2.Outs {
+			if i == 0 && v.Script.GetAddress() != "1MX1S4dniXHPJdySEszvM42nYryJx6NPgG" {
+				return fmt.Errorf("get out %d address", i)
+			}
+			if i == 1 && v.Script.GetAddress() != "1k2saXX9kkxcSpx5W9yDMbuzRLsGfE71W" {
+				return fmt.Errorf("get out %d address", i)
+			}
 		}
 		return VerifyTX(tx2, db)
 	})

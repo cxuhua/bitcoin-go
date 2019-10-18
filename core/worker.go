@@ -80,29 +80,17 @@ var (
 	WorkerQueue = make(chan *WorkerUnit, WorkerQueueSize)
 )
 
-func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
-	return db.Transaction(func(sdb store.DbImp) error {
+func processBlock(wid int, mdb store.DbImp, c *Client, m *MsgBlock) error {
+	return mdb.Transaction(func(sdb store.DbImp) error {
 		G.Lock()
 		defer G.Unlock()
-		bh := m.ToBlockHeader()
-		//check block and block txs
-		if err := m.CheckBlock(G.LastBlock(), sdb); err != nil {
+		if bh := m.ToBlockHeader(); !G.IsNextBlock(bh) {
+			return fmt.Errorf("can't link prev block,ignore block %v", NewHashID(bh.Hash))
+		} else if err := m.CheckBlock(G.LastBlock(), sdb); err != nil {
 			return fmt.Errorf("check block error %v,ignore save", err)
-		} else if bh.IsGenesis() {
-			if err := sdb.SetBK(bh.Hash, bh); err != nil {
-				return fmt.Errorf("DB save block header error %v", err)
-			}
-			if err := m.SaveTXS(sdb); err != nil {
-				return err
-			}
-			G.SetLast(bh)
-			Notice <- c
 		} else {
 			if sdb.HasBK(bh.Hash) {
 				return errors.New("block exists,ignore save ,hash=" + NewHashID(bh.Hash).String())
-			}
-			if !G.IsNextBlock(bh) {
-				return errors.New("recv block,can't link prev block")
 			}
 			if err := sdb.SetBK(bh.Hash, bh); err != nil {
 				return fmt.Errorf("DB setbk error %v", err)
@@ -110,11 +98,17 @@ func processBlock(wid int, db store.DbImp, c *Client, m *MsgBlock) error {
 			if err := m.SaveTXS(sdb); err != nil {
 				return err
 			}
+			if err := AvailableBlockComing(sdb, m); err != nil {
+				return err
+			}
 			Headers.Remove()
-			G.SetLast(bh)
-			Notice <- c
+			G.SetLastBlock(bh)
+			if c != nil {
+				Notice <- c
+				hv := fmt.Sprintf("%.3f", float32(bh.Height)/float32(c.VerInfo.Height))
+				log.Println("Work", wid, "save block:", m.Hash, "height=", bh.Height, "finish=", hv, "from", c.Key(), "OK")
+			}
 		}
-		log.Println("Work id", wid, "save block:", m.Hash, "height=", bh.Height, "from", c.Key(), "OK")
 		return nil
 	})
 }
@@ -141,7 +135,6 @@ func processHeaders(wid int, db store.DbImp, c *Client, m *MsgHeaders) error {
 
 func processInv(wid int, db store.DbImp, c *Client, m *MsgINV) error {
 	//log.Println("Work id", wid, "recv inv")
-	hm := NewMsgGetHeaders()
 	tm := NewMsgGetData()
 	for _, v := range m.Invs {
 		switch v.Type {
@@ -149,14 +142,10 @@ func processInv(wid int, db store.DbImp, c *Client, m *MsgINV) error {
 			//log.Println("get inv TX ", v.ID, " start get TX data")
 			tm.AddHash(v.Type, v.ID[:])
 		case MSG_BLOCK:
-			log.Println("get inv block id", v.ID, " start get block headers")
 			tm.AddHash(v.Type, v.ID[:])
 		case MSG_FILTERED_BLOCK:
 		case MSG_CMPCT_BLOCK:
 		}
-	}
-	if len(hm.Blocks) > 0 {
-		c.WriteMsg(hm)
 	}
 	if len(tm.Invs) > 0 {
 		c.WriteMsg(tm)

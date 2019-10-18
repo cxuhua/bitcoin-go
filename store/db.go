@@ -6,27 +6,34 @@ import (
 	"encoding/binary"
 	"sync"
 
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
+
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
-//db.txs.ensureIndex({block:1,index:-1})
-//db.blocks.ensureIndex({height:-1})
-
+/*
+db.txs.ensureIndex({block:1,index:-1});
+db.blocks.ensureIndex({height:-1});
+db.moneys.ensureIndex({addr:1});
+*/
 var (
-	client       *mongo.Client = nil
-	dbonce                     = sync.Once{}
-	NewestBK                   = []byte{0} //use GetBK method
-	UseBKHeight                = []byte{1} //5bytes height=4 byte LittleEndian
-	ListSyncBK                 = []byte{2}
-	ListBlockTxs               = []byte{0} //33bytes [1:] = block id
+	client *mongo.Client = nil
+	dbonce               = sync.Once{}
+	//special id
+	NewestBK     = []byte{0} //get newest bk
+	UseBKHeight  = []byte{1} //5bytes height=4 byte LittleEndian
+	ListBlockTxs = []byte{2} //33bytes [1:] = block id
 )
 
-type IterFunc func(cursor *mongo.Cursor) error
+type IterFunc func(cursor *mongo.Cursor) (bool, error)
 
 func IsListBlockTxs(id []byte) ([]byte, bool) {
 	b := len(id) == 33 && id[0] == ListBlockTxs[0]
-	return id[1:], b
+	if b {
+		return id[1:], b
+	}
+	return nil, false
 }
 
 func NewListBlockTxs(bid []byte) []byte {
@@ -34,10 +41,6 @@ func NewListBlockTxs(bid []byte) []byte {
 	b[0] = ListBlockTxs[0]
 	copy(b[1:], bid)
 	return b
-}
-
-func IsListSyncBK(id []byte) bool {
-	return len(id) == 1 && id[0] == ListSyncBK[0]
 }
 
 func IsNewestBK(id []byte) bool {
@@ -89,6 +92,10 @@ func (m *mongoDBImp) accounts() *mongo.Collection {
 	return m.database().Collection(ACCOUNT_TABLE)
 }
 
+func (m *mongoDBImp) moneys() *mongo.Collection {
+	return m.database().Collection(MONEYS_TABLE)
+}
+
 func (m *mongoDBImp) blocks() *mongo.Collection {
 	return m.database().Collection(BLOCK_TABLE)
 }
@@ -105,7 +112,7 @@ func (m *mongoDBImp) client() *mongo.Client {
 	return m.Context.(mongo.SessionContext).Client()
 }
 
-func (m *mongoDBImp) Transaction(fn func(db DbImp) error) error {
+func (m *mongoDBImp) Transaction(fn func(sdb DbImp) error) error {
 	ctx := m.Context.(mongo.SessionContext)
 	_, err := ctx.WithTransaction(m, func(sess mongo.SessionContext) (interface{}, error) {
 		err := fn(NewDBImp(sess))
@@ -138,8 +145,11 @@ func InitDB(ctx context.Context) *mongo.Client {
 }
 
 func UseSession(ctx context.Context, fn func(db DbImp) error) error {
+	opts := options.Session()
+	wopts := writeconcern.New(writeconcern.W(2), writeconcern.J(true))
+	opts.SetDefaultWriteConcern(wopts)
 	client = InitDB(ctx)
-	return client.UseSession(ctx, func(sess mongo.SessionContext) error {
+	return client.UseSessionWithOptions(ctx, opts, func(sess mongo.SessionContext) error {
 		return fn(NewDBImp(sess))
 	})
 }

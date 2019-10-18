@@ -14,6 +14,46 @@ import (
 	"testing"
 )
 
+func TestAmount(t *testing.T) {
+	av := Amount(0)
+	h := 37077
+	for i := 0; i <= h; i++ {
+		av += GetCoinbaseReward(i)
+	}
+	cv := int64(0)
+	store.UseSession(context.Background(), func(db store.DbImp) error {
+		cv = db.TotalMT()
+		return nil
+	})
+	log.Println("all amount = ", av, "db amount", cv)
+}
+
+//func TestBlockMoneys(t *testing.T) {
+//	err := store.UseSession(context.Background(), func(db store.DbImp) error {
+//		if err := G.Init(db); err != nil {
+//			return err
+//		}
+//		for i := uint32(24833); i <= 37077; i++ {
+//			h := &BlockHeader{}
+//			if err := db.GetBK(store.BKHeight(i), h); err != nil {
+//				return err
+//			}
+//			b := h.ToBlock()
+//			if err := b.LoadTXS(db); err != nil {
+//				return err
+//			}
+//			if err := AvailableBlockComing(db, b); err != nil {
+//				return err
+//			}
+//			log.Println("process block height=", i)
+//		}
+//		return nil
+//	})
+//	if err != nil {
+//		panic(err)
+//	}
+//}
+
 func TestSaveTXToDat(t *testing.T) {
 	data := util.HexDecode("0200000001c5cc15a54bbb6e963d21153fe9320ccef11a1405de54a2bb0a6ef1b08ae015a5010000006a473044022074e0e8a1c4c1dd70f55ebea3ef2472727839168143afb2cfe7d6494ecda4a9ef022048492f3865b6572c97d88aa334e19c6a0947a11c794706fc34a63968d8c76e93012103addffda7b0dc0856fcf248ab830c61e66d24b368393811fe58f955f0aa32e8b6fdffffff02e803000000000000160014751e76e8199196d454941c45d1b3a323f1433bd6004b0000000000001976a9145f2c746007a3171893ea09a21e0d4f4307be2e1a88acc6090900")
 	h := NewNetHeader(data)
@@ -28,7 +68,7 @@ func TestSaveTXToDat(t *testing.T) {
 }
 
 func TestInfo(t *testing.T) {
-	data2 := util.HexDecode("020000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff4e0338220904129f9d5d535a30322f4254432e434f4d2ffabe6d6db782a41cbf92a6bca1f0b0e98bee0d8fabc2b7ff8e5a91b3815b7f054abe54e2080000007296cd1092eba16aef5e010000000000ffffffff0321d18d4a0000000016001497cfc76442fe717f2a3f0cc9c175f7561b6619970000000000000000266a24aa21a9ed995e3f01e0ad89d8add62981129645ca5518da2d8a6e507d06b900cbf3b61acc0000000000000000266a24b9e11b6de0b00267354a66a640f4f5322efd45e50eef89cd32a3298fb10f6c58dbd267670120000000000000000000000000000000000000000000000000000000000000000000000000")
+	data2 := util.HexDecode("010000000001010000000000000000000000000000000000000000000000000000000000000000ffffffff64032927092cfabe6d6d25f8fd417467fa716a00c1232c3b462f28793ffe995b6ae5ea6b732a122201dc10000000f09f909f000f4d696e6564206279206274636c7167000000000000000000000000000000000000000000000000000000000500a24000000000000004915fd44a000000001976a914c825a1ecf2a6830c4401620c3a16f1995057c2ab88ac00000000000000002f6a24aa21a9ed714cdeafe40784aa6a1574e30c316075f9ae3e87aa5bf0401c7de18a44cab91208000000000000000000000000000000002c6a4c2952534b424c4f434b3a5fd56f2606b471973ca699fabaa0a22d34ff680fa5fc92fbad7a3536001b71790000000000000000266a24b9e11b6dd72310415b4d239fab1f9026a74c2475175a17501ccee8b5a745950873fa58480120000000000000000000000000000000000000000000000000000000000000000065b07a3b")
 	h2 := NewNetHeader(data2)
 	tx2 := &TX{}
 	tx2.Read(h2)

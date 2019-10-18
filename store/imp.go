@@ -60,6 +60,14 @@ type IncValue map[string]int
 
 type DbImp interface {
 	context.Context
+	//total db all amount
+	TotalMT() int64
+	//set money record
+	SetMT(id []byte, v interface{}) error
+	//get money record
+	GetMT(id []byte, v interface{}) error
+	//delete money record
+	DelMT(id []byte) error
 	//get account data
 	GetAT(id []byte, v interface{}) error
 	//exists account

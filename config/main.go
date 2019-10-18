@@ -44,6 +44,11 @@ type Config struct {
 	MinerConfirmationWindow int
 }
 
+//DifficultyAdjustmentInterval
+func (c Config) DiffAdjusInterval() int {
+	return c.PowTargetTimespan / c.PowTargetSpacing
+}
+
 func (c Config) Base58Prefix(idx int) []byte {
 	return c.b58prefixs[idx]
 }

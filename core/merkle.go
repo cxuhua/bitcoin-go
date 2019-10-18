@@ -69,6 +69,15 @@ func (tree *MerkleTree) Height() int {
 	return h
 }
 
+func BuildMerkleTree(ids []HashID) *MerkleTree {
+	num := len(ids)
+	tree := NewMerkleTree(num)
+	vb := bitset.New(uint(num))
+	h := tree.Height()
+	tree.build(h, 0, ids, vb)
+	return tree
+}
+
 func (tree *MerkleTree) Build(ids []HashID, vb *bitset.BitSet) *MerkleTree {
 	tree.bad = false
 	tree.vhash = []HashID{}
