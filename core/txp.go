@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 
 	"github.com/willf/bitset"
 
@@ -235,6 +236,27 @@ type TX struct {
 	Raw      []byte //raw data
 }
 
+func (m *TX) TotalWeight() int {
+	w := len(m.Witness) + len(m.Body)
+	if m.HasWitness() {
+		w += 2
+	}
+	return w
+}
+
+func (m *TX) BaseWeight() int {
+	return len(m.Body)
+}
+
+func (m *TX) VirtualSize() int {
+	v := float64(m.Weight()) / 4.0
+	return int(math.Floor(v + 0.5))
+}
+
+func (m *TX) Weight() int {
+	return m.BaseWeight()*3 + m.TotalWeight()
+}
+
 func NewTX(bid HashID, idx uint32) *TX {
 	return &TX{
 		Block: bid,
@@ -285,6 +307,16 @@ func NewTXFrom(tx *TX) *TXHeader {
 	txh.Block = tx.Block[:]
 	txh.Index = tx.Index
 	return txh
+}
+
+//last height use g locker
+func (m *TX) GetConfirm(db store.DbImp) uint32 {
+	bh := &BlockHeader{}
+	err := db.GetBK(m.Block[:], bh)
+	if err != nil {
+		return 0
+	}
+	return G.LastHeight() - bh.Height + 1
 }
 
 //check tx ,return trans fee
