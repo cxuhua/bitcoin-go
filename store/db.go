@@ -10,6 +10,9 @@ import (
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
+//db.txs.ensureIndex({block:1,index:-1})
+//db.blocks.ensureIndex({height:-1})
+
 var (
 	client       *mongo.Client = nil
 	dbonce                     = sync.Once{}
