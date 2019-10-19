@@ -2,55 +2,9 @@ package main
 
 import (
 	"bitcoin/core"
-	"errors"
-	"fmt"
-	"io"
-	"io/ioutil"
 	"log"
 	"testing"
 )
-
-func loadBlock(id string) *core.MsgBlock {
-	data, err := ioutil.ReadFile("blocks/" + id)
-	if err != nil {
-		panic(err)
-	}
-	h := core.NewNetHeader(data)
-	m := &core.MsgBlock{}
-	m.Read(h)
-	return m
-}
-
-func loadTestBlocks() []*core.MsgBlock {
-	ms := []*core.MsgBlock{}
-	last := loadBlock("00000000b5ef0ea215becad97402ce59d1416fe554261405cda943afd2a8c8f2")
-	ms = append(ms, last)
-	for !last.Prev.IsZero() {
-		last = loadBlock(last.Prev.String())
-		ms = append(ms, last)
-	}
-	rs := []*core.MsgBlock{}
-	for i := len(ms) - 1; i >= 0; i-- {
-		rs = append(rs, ms[i])
-	}
-	return rs
-}
-
-func TestLevelDB(t *testing.T) {
-
-	err := fmt.Errorf("recv done worker exit %v", io.EOF)
-	log.Println(errors.Is(err, io.EOF))
-
-	//defer core.DB().Close()
-	//bs := loadTestBlocks()
-	//for h, m := range bs {
-	//	m.Height = uint32(h)
-	//	log.Println(h, m.Hash)
-	//	if err := m.Save(true); err != nil {
-	//		panic(err)
-	//	}
-	//}
-}
 
 func TestLoadKey(t *testing.T) {
 	defer core.DB().Close()
