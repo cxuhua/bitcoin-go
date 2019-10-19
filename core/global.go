@@ -1,7 +1,6 @@
 package core
 
 import (
-	"bitcoin/store"
 	"bytes"
 	"fmt"
 	"io/ioutil"
@@ -11,9 +10,8 @@ import (
 )
 
 type Global struct {
-	mu sync.Mutex
-	lb *BlockHeader
-	hb *BlockHeader
+	mu   sync.Mutex
+	best *MsgBlock
 }
 
 func (g *Global) Lock() {
@@ -24,70 +22,59 @@ func (g *Global) Unlock() {
 	g.mu.Unlock()
 }
 
-func (g *Global) IsNextHeader(bh *BlockHeader) bool {
+func (g *Global) IsNextHeader(bh *BHeader) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.hb == nil {
-		g.hb = g.lb
-	}
-	ok := bytes.Equal(bh.Prev[:], g.hb.Hash[:])
-	if ok {
-		g.hb = bh
-	}
-	return ok
+	return bh.Prev.Equal(g.best.Hash)
 }
 
-func (g *Global) LastBlock() *BlockHeader {
-	return g.lb
+func (g *Global) LastBlock() *MsgBlock {
+	return g.best
 }
 
 func (g *Global) LastHeight() uint32 {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if g.lb == nil {
+	if g.best == nil {
 		return 0
 	}
-	return g.lb.Height
+	return g.best.Height
 }
 
-func (g *Global) LastHash() []byte {
+func (g *Global) LastHash() HashID {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.lb.Hash
+	return g.best.Hash
 }
 
-func (g *Global) IsNextBlock(bh *BlockHeader) bool {
-	if g.lb == nil && bh.IsGenesis() {
+func (g *Global) IsNextBlock(m *MsgBlock) bool {
+	if m.IsGenesis() {
 		return true
 	}
-	if g.lb == nil {
-		return false
+	if m.Prev.Equal(g.best.Hash) {
+		m.Height = g.best.Height + 1
+		return true
 	}
-	ok := bytes.Equal(bh.Prev[:], g.lb.Hash[:])
-	if ok {
-		bh.Height = g.lb.Height + 1
-	}
-	return ok
+	return false
 }
 
-func (g *Global) HasLast() bool {
+func (g *Global) SetBestBlock(m *MsgBlock) {
+	g.best = m
+}
+
+func (g *Global) IsRequestGenesis() bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	return g.lb != nil
+	return g.best == nil
 }
 
-func (g *Global) SetLastBlock(v *BlockHeader) {
-	g.lb = v
-}
-
-func (g *Global) Init(db store.DbImp) error {
-	//get last block
-	bh := &BlockHeader{}
-	if err := db.GetBK(store.NewestBK, bh); err == nil {
-		G.SetLastBlock(bh)
-		log.Println("last block height", bh.Height, "hash=", NewHashID(bh.Hash))
+func (g *Global) Init() error {
+	if best, err := LoadBestBlock(); err == nil {
+		g.best = best
+		log.Println("load best block", best.Hash, "height=", best.Height)
+	} else {
+		log.Println("database empty,start download genesis block")
 	}
-	//get not download block
 	return nil
 }
 

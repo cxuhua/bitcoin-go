@@ -2,10 +2,8 @@ package core
 
 import (
 	"bitcoin/script"
-	"bitcoin/store"
 	"bitcoin/util"
 	"bytes"
-	"context"
 	"encoding/hex"
 	"fmt"
 	"io/ioutil"
@@ -13,20 +11,6 @@ import (
 	"os"
 	"testing"
 )
-
-func TestAmount(t *testing.T) {
-	av := Amount(0)
-	h := 125227
-	for i := 0; i <= h; i++ {
-		av += GetCoinbaseReward(i)
-	}
-	cv := int64(0)
-	store.UseSession(context.Background(), func(db store.DbImp) error {
-		cv = db.SumMT(true)
-		return nil
-	})
-	log.Println("all amount = ", av, "db amount", cv)
-}
 
 //func TestBlockMoneys(t *testing.T) {
 //	err := store.UseSession(context.Background(), func(db store.DbImp) error {
@@ -85,24 +69,6 @@ func TestCloneTX(t *testing.T) {
 
 	if !tx1.Hash.Equal(tx2.Hash) {
 		t.Errorf("clone tx error")
-	}
-}
-
-func TestSaveTX(t *testing.T) {
-	data2 := util.HexDecode("0100000001b6da357dfa24917f1f32414a10e2fcdad971a52521ecf84901f63612b0a103090000000048473044021f01ea6d57bf0373f8242ff263893ed396ea3de374439dfd80d59c2c1e6ab50a022100ee013faa0138a5f014b8f308befe2995ae3cb2e9fcd0763d2c7ca7b91f74435901ffffffff0247e8846d00000000434104a39b9e4fbd213ef24bb9be69de4a118dd0644082e47c01fd9159d38637b83fbcdc115a5d6e970586a012d1cfe3e3a8b1a3d04e763bdc5a071c0e827c0bd834a5acc0ac0d0d000000001976a9146ced4fd6ab06f237d185aebb11a7b4d92d7f8c8088ac00000000")
-	h := NewNetHeader(data2)
-	tx := &TX{}
-	tx.Read(h)
-	log.Println(tx.Hash, "save")
-	err := store.UseSession(context.Background(), func(db store.DbImp) error {
-		err := tx.Save(db)
-		if err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		t.Errorf("test save tx error %v", err)
 	}
 }
 

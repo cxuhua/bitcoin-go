@@ -2,7 +2,6 @@ package core
 
 import (
 	"bitcoin/script"
-	"bitcoin/store"
 	"errors"
 	"fmt"
 )
@@ -15,7 +14,7 @@ var (
 
 type Verifyer interface {
 	//check sig
-	Verify(db store.DbImp, flags int) error
+	Verify(flags int) error
 	//sig data packer
 	Packer(sig *script.SigValue) SigPacker
 }
@@ -129,7 +128,7 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	return TX_UNKNOW
 }
 
-func VerifyTX(tx *TX, db store.DbImp, flags int) error {
+func VerifyTX(tx *TX, flags int) error {
 	if tx == nil {
 		return errors.New("args nil")
 	}
@@ -140,7 +139,7 @@ func VerifyTX(tx *TX, db store.DbImp, flags int) error {
 		return nil
 	}
 	for idx, in := range tx.Ins {
-		out, err := in.OutTx(db)
+		out, err := in.OutTx()
 		if err != nil {
 			return fmt.Errorf("load ref out error %v", err)
 		}
@@ -167,7 +166,7 @@ func VerifyTX(tx *TX, db store.DbImp, flags int) error {
 		default:
 			return fmt.Errorf("in %d checktype not support,miss Verifyer", idx)
 		}
-		if err := verifyer.Verify(db, flags); err != nil {
+		if err := verifyer.Verify(flags); err != nil {
 			return fmt.Errorf("Verifyer in %d error %v", idx, err)
 		}
 	}

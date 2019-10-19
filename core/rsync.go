@@ -2,14 +2,12 @@ package core
 
 import (
 	"bitcoin/config"
-	"bitcoin/store"
 	"bitcoin/util"
 	"context"
+	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
-	"os"
 	"sort"
 	"sync"
 	"time"
@@ -377,11 +375,11 @@ var (
 	Headers = NewBlockHeaderList()
 )
 
-func syncData(db store.DbImp, client *Client, conf *config.Config) {
+func syncData(client *Client, conf *config.Config) {
 	if OutIps.Len() == 0 || client == nil {
 		return
 	}
-	if !G.HasLast() {
+	if G.IsRequestGenesis() {
 		m := NewMsgGetData()
 		m.Add(Inventory{
 			Type: MSG_BLOCK,
@@ -391,23 +389,11 @@ func syncData(db store.DbImp, client *Client, conf *config.Config) {
 	} else if Headers.Len() == 0 {
 		m := NewMsgGetHeaders()
 		NewMsgGetBlocks()
-		m.AddHash(G.LastHash())
+		m.AddHashID(G.LastHash())
 		client.WriteMsg(m)
 	} else if h := Headers.Front(); h != nil {
-		///
-		file := "blocks/" + NewHashID(h.Hash).String()
-		if f, err := os.Stat(file); err == nil && f.Size() > 0 {
-			data, err := ioutil.ReadFile(file)
-			if err == nil {
-				m := &MsgBlock{}
-				h := NewNetHeader(data)
-				m.Read(h)
-				WorkerQueue <- &WorkerUnit{m: m, c: client}
-				return
-			}
-		}
 		m := NewMsgGetData()
-		m.AddHash(MSG_BLOCK, h.Hash)
+		m.AddHash(MSG_BLOCK, h.Hash[:])
 		client.WriteMsg(m)
 	}
 }
@@ -417,7 +403,7 @@ func StartDispatch(ctx context.Context) {
 		MWG.Done()
 	}()
 	MWG.Add(1)
-	mfx := func(db store.DbImp) error {
+	mfx := func() error {
 		log.Println("dispatch start")
 		defer func() {
 			if err := recover(); err != nil {
@@ -430,12 +416,12 @@ func StartDispatch(ctx context.Context) {
 		for {
 			select {
 			case client := <-Notice:
-				syncData(db, client, conf)
+				syncData(client, conf)
 				stimer.Reset(time.Second * 30)
 			case addrs := <-RecvAddr:
 				processAddrs(addrs, conf)
 			case <-stimer.C:
-				syncData(db, OutIps.Seq(), conf)
+				syncData(OutIps.Seq(), conf)
 				stimer.Reset(time.Second * 10)
 			case <-ctimer.C:
 				checkStatus(conf)
@@ -443,14 +429,18 @@ func StartDispatch(ctx context.Context) {
 			case ip := <-IpChan:
 				startconnect(ip)
 			case <-ctx.Done():
-				return ctx.Err()
+				return fmt.Errorf("dispatch end, return %w", ctx.Err())
 			}
 		}
 	}
-	for ctx.Err() != context.Canceled {
+	for {
 		time.Sleep(time.Second * 3)
-		store.UseSession(ctx, func(db store.DbImp) error {
-			return mfx(db)
-		})
+		err := mfx()
+		if err != nil {
+			log.Println(err)
+		}
+		if errors.Is(err, context.Canceled) {
+			break
+		}
 	}
 }

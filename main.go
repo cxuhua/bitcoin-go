@@ -2,7 +2,6 @@ package main
 
 import (
 	"bitcoin/core"
-	"bitcoin/store"
 	"context"
 	"log"
 	"os"
@@ -12,15 +11,13 @@ import (
 
 func main() {
 	csig := make(chan os.Signal)
+	//
 	ctx, cancel := context.WithCancel(context.Background())
-	//init global value
-	err := store.UseSession(ctx, func(db store.DbImp) error {
-		return core.G.Init(db)
-	})
-	if err != nil {
-		log.Println("init global value error", err)
-		os.Exit(-1)
-		return
+	//init db
+	db := core.DB()
+	defer db.Close()
+	if err := core.G.Init(); err != nil {
+		panic(err)
 	}
 	//startup lookup
 	go core.StartLookUp(ctx)

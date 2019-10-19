@@ -2,7 +2,6 @@ package core
 
 import (
 	"bitcoin/script"
-	"bitcoin/store"
 	"bitcoin/util"
 	"errors"
 	"fmt"
@@ -63,7 +62,7 @@ func (vfy *p2shMSIGVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byt
 	return nil
 }
 
-func (vfy *p2shMSIGVerify) Verify(db store.DbImp, flags int) error {
+func (vfy *p2shMSIGVerify) Verify(flags int) error {
 	stack := script.NewStack()
 	if vfy.in.Script == nil {
 		return errors.New("in script error nil")

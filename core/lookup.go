@@ -3,6 +3,8 @@ package core
 import (
 	"bitcoin/config"
 	"context"
+	"errors"
+	"fmt"
 	"log"
 	"net"
 	"sync"
@@ -59,26 +61,26 @@ func getconnip(ips []IPPort, idx int, conf *config.Config) (IPPort, bool) {
 func StartLookUp(ctx context.Context) {
 	defer MWG.Done()
 	MWG.Add(1)
-	mfx := func() {
+	mfx := func() error {
 		log.Println("lookup start")
 		defer func() {
 			if err := recover(); err != nil {
-				log.Println("[LOOKUP error]:", err)
+				log.Println("[lookup error]:", err)
 			}
 		}()
 		conf := config.GetConfig()
 
 		//for test,only connect one
-		//ips := []IPPort{{
-		//	ip:   net.ParseIP("47.97.62.19"),
-		//	port: 8333,
-		//}}
+		ips := []IPPort{{
+			ip:   net.ParseIP("47.97.62.19"),
+			port: 8333,
+		}}
 
-		ips := []IPPort{}
-		for _, v := range fixips {
-			ips = append(ips, v)
-		}
-		ips = append(ips, lookupseeds(ctx, conf)...)
+		//ips := []IPPort{}
+		//for _, v := range fixips {
+		//	ips = append(ips, v)
+		//}
+		//ips = append(ips, lookupseeds(ctx, conf)...)
 
 		ctimer := time.NewTimer(time.Millisecond * 100)
 		checkAll := false
@@ -104,13 +106,18 @@ func StartLookUp(ctx context.Context) {
 					ctimer.Reset(time.Millisecond * 100)
 				}
 			case <-ctx.Done():
-				log.Println("LOOKUP stop", ctx.Err())
-				return
+				return fmt.Errorf("lookup error %w", ctx.Err())
 			}
 		}
 	}
-	for ctx.Err() != context.Canceled {
+	for {
 		time.Sleep(time.Second * 3)
-		mfx()
+		err := mfx()
+		if err != nil {
+			log.Println(err)
+		}
+		if errors.Is(err, context.Canceled) {
+			break
+		}
 	}
 }

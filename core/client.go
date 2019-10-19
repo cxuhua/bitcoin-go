@@ -8,10 +8,8 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net"
-	"os"
 	"time"
 )
 
@@ -170,11 +168,6 @@ func (c *Client) processMsg(m *NetHeader) {
 	case NMT_BLOCK:
 		mp := NewMsgBlock()
 		msg = m.Full(mp)
-		///
-		file := "blocks/" + mp.Hash.String()
-		if f, err := os.Stat(file); err != nil || f.Size() == 0 {
-			ioutil.WriteFile("blocks/"+mp.Hash.String(), m.Payload, os.ModePerm)
-		}
 	case NMT_ADDR:
 		am := NewMsgAddr()
 		msg = m.Full(am)
