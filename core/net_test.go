@@ -16,13 +16,13 @@ import (
 
 func TestAmount(t *testing.T) {
 	av := Amount(0)
-	h := 37077
+	h := 92895
 	for i := 0; i <= h; i++ {
 		av += GetCoinbaseReward(i)
 	}
 	cv := int64(0)
 	store.UseSession(context.Background(), func(db store.DbImp) error {
-		cv = db.TotalMT()
+		cv = db.SumMT(true)
 		return nil
 	})
 	log.Println("all amount = ", av, "db amount", cv)

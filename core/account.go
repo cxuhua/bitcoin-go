@@ -15,14 +15,25 @@ type Account struct {
 	Keys []AccountKey `bson:"keys"`
 }
 
-func AvailableBlockComing(sdb store.DbImp, b *MsgBlock) error {
+//sync money record
+func (b *MsgBlock) SyncMoneys(sdb store.DbImp) error {
 	for _, v := range b.Txs {
-		for _, in := range v.Ins {
+		for iidx, in := range v.Ins {
 			if in.OutHash.IsZero() {
 				continue
 			}
-			oid := NewMoneyId(in.OutHash, in.OutIndex)
-			if err := sdb.DelMT(oid); err != nil {
+			out, err := in.OutTx(sdb)
+			if err != nil {
+				return err
+			}
+			sv := out.ToSubMoneys(v.Hash, uint32(iidx))
+			if sv == nil {
+				continue
+			}
+			if v.IsCoinBase() && sdb.HasMT(sv.Id) {
+				sv = sv.LoseMoney()
+			}
+			if err := sdb.SetMT(sv.Id, sv); err != nil {
 				return err
 			}
 		}
@@ -30,7 +41,13 @@ func AvailableBlockComing(sdb store.DbImp, b *MsgBlock) error {
 			if out.Value == 0 {
 				continue
 			}
-			sv := out.ToMoneys(v.Hash, uint32(oidx))
+			sv := out.ToAddMoneys(v.Hash, uint32(oidx))
+			if sv == nil {
+				continue
+			}
+			if v.IsCoinBase() && sdb.HasMT(sv.Id) {
+				sv = sv.LoseMoney()
+			}
 			if err := sdb.SetMT(sv.Id, sv); err != nil {
 				return err
 			}

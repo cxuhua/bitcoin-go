@@ -5,6 +5,7 @@ import (
 	"bitcoin/script"
 	"bitcoin/store"
 	"bytes"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"log"
@@ -94,11 +95,29 @@ type TxOut struct {
 	Script *script.Script
 }
 
-func (m *TxOut) ToMoneys(txid HashID, idx uint32) *Moneys {
+func (m *TxOut) ToSubMoneys(txid HashID, idx uint32) *Moneys {
 	mv := NewMoneys()
-	mv.Id = NewMoneyId(txid, idx)
-	mv.Addr = m.Script.GetAddress()
-	mv.Value = m.Value
+	mv.Id = NewMoneyId(txid, idx, store.MT_IO_IN)
+	if addr := m.Script.GetAddress(); addr == "" {
+		log.Println("address parse failed", hex.EncodeToString(*m.Script))
+		return nil
+	} else {
+		mv.Addr = addr
+	}
+	mv.Value = Amount(-m.Value)
+	return mv
+}
+
+func (m *TxOut) ToAddMoneys(txid HashID, idx uint32) *Moneys {
+	mv := NewMoneys()
+	mv.Id = NewMoneyId(txid, idx, store.MT_IO_OUT)
+	if addr := m.Script.GetAddress(); addr == "" {
+		log.Println("address parse failed", hex.EncodeToString(*m.Script))
+		return nil
+	} else {
+		mv.Addr = addr
+	}
+	mv.Value = Amount(m.Value)
 	return mv
 }
 
@@ -412,6 +431,12 @@ func (m *TX) Check() error {
 	}
 	vout := Amount(0)
 	for _, v := range m.Outs {
+		if v.Script == nil {
+			return errors.New("script miss")
+		}
+		if len(*v.Script) > script.MAX_SCRIPT_SIZE {
+			return errors.New("script too long")
+		}
 		if int64(v.Value) < 0 {
 			return errors.New("bad-txns-vout-negative")
 		}
@@ -432,6 +457,9 @@ func (m *TX) Check() error {
 		}
 	} else {
 		for _, v := range m.Ins {
+			if len(*v.Script) > script.MAX_SCRIPT_SIZE {
+				return errors.New("script too long")
+			}
 			if v.OutHash.IsZero() {
 				return errors.New("bad-txns-prevout-null")
 			}
@@ -870,16 +898,17 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 		if i == 0 && !v.IsCoinBase() {
 			return errors.New("0 tx not coinbase")
 		}
-		if err := v.Check(); err != nil {
-			return fmt.Errorf("check block tx error %v", err)
+		//coinbase txid,There may be the same
+		if !v.IsCoinBase() && db.HasTX(v.Hash[:]) {
+			return fmt.Errorf("block tx exists txid=%v", v.Hash)
 		}
-		if db.HasTX(v.Hash[:]) {
-			return errors.New("block tx exists,error")
+		if i == 4 {
+			log.Println("a")
 		}
-		txids = append(txids, v.Hash)
 		if err := VerifyTX(v, db); err != nil {
 			return fmt.Errorf("verify tx error %v", err)
 		}
+		txids = append(txids, v.Hash)
 		av, err := v.GetFee(db)
 		if err != nil {
 			return fmt.Errorf("check tx amount error %v", err)
@@ -926,9 +955,16 @@ func (m *MsgBlock) PrevBlock(db store.DbImp) (*MsgBlock, error) {
 }
 
 func (m *MsgBlock) SaveTXS(db store.DbImp) error {
-	vs := make([]interface{}, len(m.Txs))
-	for i, v := range m.Txs {
-		vs[i] = NewTXFrom(v)
+	vs := make([]interface{}, 0)
+	for _, v := range m.Txs {
+		//allow coinbase txid same
+		if v.IsCoinBase() && db.HasTX(v.Hash[:]) {
+			continue
+		}
+		vs = append(vs, NewTXFrom(v))
+	}
+	if len(vs) == 0 {
+		return nil
 	}
 	return db.MulTX(vs)
 }

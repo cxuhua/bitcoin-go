@@ -17,6 +17,8 @@ func TestBloomFilter(t *testing.T) {
 	seed := uint64(0xFBA4C795 + 5)
 	m := murmur3.Sum32WithSeed([]byte{0}, uint32(seed))
 	log.Println(m)
+
+	log.Println(P2PKHAddress(HexDecode("4838a081d73cf134e8ff9cfd4015406c73beceb3")))
 }
 
 //扫描标签获取相关数据，填写上次记录hash，生成签名后提交到地址

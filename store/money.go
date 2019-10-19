@@ -9,32 +9,13 @@ import (
 
 const (
 	MONEYS_TABLE = "moneys"
+	MT_IO_IN     = byte('I')
+	MT_IO_OUT    = byte('O')
+	MT_IO_LOSE   = byte('L')
 )
 
-func IsMoneyId(id []byte) bool {
-	return len(id) == 37 && id[0] == 0
-}
-
-func NewOptMoneyId(id []byte) []byte {
-	b := make([]byte, 37)
-	b[0] = 0
-	copy(b[1:], id)
-	return b
-}
-
-func NewAddrId(addr string) []byte {
-	b := make([]byte, len(addr)+1)
-	b[0] = 1
-	copy(b[1:], addr)
-	return b
-}
-
-func IsAddrId(id []byte) bool {
-	return len(id) > 0 && id[0] == 1
-}
-
 //total all money value
-func (m *mongoDBImp) TotalMT() int64 {
+func (m *mongoDBImp) SumMT(lose bool) int64 {
 	ret := int64(0)
 	vv := bson.M{}
 	cur, err := m.moneys().Find(m, bson.M{})
@@ -48,59 +29,34 @@ func (m *mongoDBImp) TotalMT() int64 {
 			return -1
 		}
 		ret += vv["value"].(int64)
+		if lose {
+			ret += vv["lose"].(int64)
+		}
 	}
 	return ret
 }
 
+//check tx exists
+func (m *mongoDBImp) HasMT(id []byte) bool {
+	ret := m.moneys().FindOne(m, bson.M{"_id": id}, options.FindOne().SetProjection(bson.M{"_id": 1}))
+	return ret.Err() == nil
+}
+
 //set money record
 func (m *mongoDBImp) SetMT(id []byte, v interface{}) error {
-	switch v.(type) {
-	case IncValue:
-		ds := bson.M{}
-		for k, v := range v.(IncValue) {
-			ds[k] = v
-		}
-		if len(ds) > 0 {
-			_, err := m.moneys().UpdateOne(m, bson.M{"_id": id}, bson.M{"$inc": ds})
-			return err
-		}
-	case SetValue:
-		ds := bson.M{}
-		for k, v := range v.(SetValue) {
-			ds[k] = v
-		}
-		if len(ds) > 0 {
-			_, err := m.moneys().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": ds})
-			return err
-		}
-	default:
-		opt := options.Update().SetUpsert(true)
-		_, err := m.moneys().UpdateOne(m, bson.M{"_id": id}, bson.M{"$set": v}, opt)
-		return err
-	}
-	return nil
+	_, err := m.moneys().InsertOne(m, v)
+	return err
 }
 
 //get money record
+//id == string(address)
 func (m *mongoDBImp) GetMT(id []byte, v interface{}) error {
-	if IsMoneyId(id) {
-		ret := m.moneys().FindOne(m, bson.M{"_id": id[1:]})
-		if err := ret.Err(); err != nil {
-			return err
-		}
-		return ret.Decode(v)
-	}
-	if !IsAddrId(id) {
-		return errors.New("id error")
-	}
 	fn, ok := v.(IterFunc)
 	if !ok {
 		return errors.New("v args type error,IterFunc")
 	}
-	sid := string(id[1:])
-	opts := options.Find()
-	opts.SetSort(bson.M{"index": 1})
-	iter, err := m.moneys().Find(m, bson.M{"addr": sid}, opts)
+	sid := string(id)
+	iter, err := m.moneys().Find(m, bson.M{"addr": sid})
 	if err != nil {
 		return err
 	}
@@ -113,10 +69,4 @@ func (m *mongoDBImp) GetMT(id []byte, v interface{}) error {
 		}
 	}
 	return nil
-}
-
-//delete money record
-func (m *mongoDBImp) DelMT(id []byte) error {
-	_, err := m.moneys().DeleteOne(m, bson.M{"_id": id})
-	return err
 }
