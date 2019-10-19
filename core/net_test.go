@@ -16,7 +16,7 @@ import (
 
 func TestAmount(t *testing.T) {
 	av := Amount(0)
-	h := 92895
+	h := 125227
 	for i := 0; i <= h; i++ {
 		av += GetCoinbaseReward(i)
 	}

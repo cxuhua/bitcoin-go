@@ -931,9 +931,6 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 		if !v.IsCoinBase() && db.HasTX(v.Hash[:]) {
 			return fmt.Errorf("block tx exists txid=%v", v.Hash)
 		}
-		if i == 4 {
-			log.Println("a")
-		}
 		if err := VerifyTX(v, db, flags); err != nil {
 			return fmt.Errorf("verify tx error %v", err)
 		}
@@ -952,7 +949,7 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 	if !cfee.IsRange() || !bfee.IsRange() {
 		return errors.New("check block fee error")
 	}
-	if vfee != (cfee - bfee) {
+	if (cfee - bfee) > vfee {
 		return errors.New("block amount error")
 	}
 	root, _, _ := BuildMerkleTree(txids).Extract()

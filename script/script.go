@@ -746,7 +746,13 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 				iok := 0
 				for isig <= isig2 && ikey <= ikey2 {
 					sig := stack.Top(-isig).ToBytes()
+					if err := CheckSignatureEncoding(sig, flags); err != nil {
+						return err
+					}
 					pub := stack.Top(-ikey).ToBytes()
+					if !IsCompressedOrUncompressedPubKey(pub) {
+						return SCRIPT_ERR_PUBKEYTYPE
+					}
 					err := checker.CheckSig(stack, sig, pub)
 					if err == nil {
 						iok++
