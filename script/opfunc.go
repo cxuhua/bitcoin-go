@@ -137,6 +137,26 @@ func CheckSignatureEncoding(sig []byte, flags int) error {
 	return nil
 }
 
+func IsCompressedPubKey(pub []byte) bool {
+	if len(pub) != COMPRESSED_PUBLIC_KEY_SIZE {
+		return false
+	}
+	if pub[0] != 0x02 && pub[0] != 0x03 {
+		return false
+	}
+	return true
+}
+
+func CheckPubKeyEncoding(pub []byte, flags int) error {
+	if flags&SCRIPT_VERIFY_STRICTENC != 0 && !IsCompressedOrUncompressedPubKey(pub) {
+		return SCRIPT_ERR_PUBKEYTYPE
+	}
+	if flags&SCRIPT_VERIFY_WITNESS_PUBKEYTYPE != 0 && flags&SCRIPT_WITNESS_V0_PUBKEYTYPE != 0 && !IsCompressedPubKey(pub) {
+		return SCRIPT_ERR_WITNESS_PUBKEYTYPE
+	}
+	return nil
+}
+
 func IsCompressedOrUncompressedPubKey(pb []byte) bool {
 	if len(pb) < COMPRESSED_PUBLIC_KEY_SIZE {
 		return false
@@ -296,6 +316,7 @@ func (s Script) IsP2PKH(v ...*[]byte) bool {
 		}
 		return b
 	}
+	//parse error,try
 	b = s.Len() >= 25 && s.Len() < MAX_SCRIPT_SIZE && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
 	if b {
 		if len(v) > 0 {

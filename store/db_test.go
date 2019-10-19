@@ -25,23 +25,7 @@ func TestGetSetTX(t *testing.T) {
 		X:  make([]byte, 1024),
 	}
 	err := UseSession(context.Background(), func(db DbImp) error {
-		err := db.SetTX(data.Id, data)
-		if err != nil {
-			return err
-		}
 		if !db.HasTX(data.Id) {
-			return errors.New("test hastx error")
-		}
-		v := dt{}
-		err = db.GetTX(data.Id, &v)
-		if err != nil {
-			return err
-		}
-		err = db.DelTX(data.Id)
-		if err != nil {
-			return err
-		}
-		if db.HasTX(data.Id) {
 			return errors.New("test hastx error")
 		}
 		return nil

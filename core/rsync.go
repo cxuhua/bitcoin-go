@@ -6,8 +6,10 @@ import (
 	"bitcoin/util"
 	"context"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
+	"os"
 	"sort"
 	"sync"
 	"time"
@@ -236,6 +238,9 @@ func (m *ClientMap) Seq() *Client {
 	defer m.mu.Unlock()
 	ds := []*Client{}
 	for _, v := range m.nodes {
+		if v.Ping == 0 {
+			v.Ping = int(^uint16(0))
+		}
 		ds = append(ds, v)
 	}
 	sort.Slice(ds, func(i, j int) bool {
@@ -252,11 +257,30 @@ func (m *ClientMap) Seq() *Client {
 	return ds[idx]
 }
 
+func (m *ClientMap) Best() *Client {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	ds := []*Client{}
+	for _, v := range m.nodes {
+		if v.Ping == 0 {
+			v.Ping = int(^uint16(0))
+		}
+		ds = append(ds, v)
+	}
+	sort.Slice(ds, func(i, j int) bool {
+		return ds[i].Ping < ds[j].Ping
+	})
+	return ds[0]
+}
+
 func (m *ClientMap) Any() *Client {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	ds := []*Client{}
 	for _, v := range m.nodes {
+		if v.Ping == 0 {
+			v.Ping = int(^uint16(0))
+		}
 		ds = append(ds, v)
 	}
 	sort.Slice(ds, func(i, j int) bool {
@@ -370,6 +394,18 @@ func syncData(db store.DbImp, client *Client, conf *config.Config) {
 		m.AddHash(G.LastHash())
 		client.WriteMsg(m)
 	} else if h := Headers.Front(); h != nil {
+		///
+		file := "blocks/" + NewHashID(h.Hash).String()
+		if f, err := os.Stat(file); err == nil && f.Size() > 0 {
+			data, err := ioutil.ReadFile(file)
+			if err == nil {
+				m := &MsgBlock{}
+				h := NewNetHeader(data)
+				m.Read(h)
+				WorkerQueue <- &WorkerUnit{m: m, c: client}
+				return
+			}
+		}
 		m := NewMsgGetData()
 		m.AddHash(MSG_BLOCK, h.Hash)
 		client.WriteMsg(m)

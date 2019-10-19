@@ -16,7 +16,8 @@ type Account struct {
 }
 
 //sync money record
-func (b *MsgBlock) SyncMoneys(sdb store.DbImp) error {
+func (b *MsgBlock) SyncMoneys(height int, sdb store.DbImp) error {
+	reward := GetCoinbaseReward(height)
 	for _, v := range b.Txs {
 		for iidx, in := range v.Ins {
 			if in.OutHash.IsZero() {
@@ -50,6 +51,14 @@ func (b *MsgBlock) SyncMoneys(sdb store.DbImp) error {
 			}
 			if err := sdb.SetMT(sv.Id, sv); err != nil {
 				return err
+			}
+			if v.IsCoinBase() && Amount(out.Value) < reward {
+				lv := out.ToAddMoneys(v.Hash, uint32(oidx))
+				lv.Value = reward - Amount(out.Value)
+				lv = lv.LoseMoney()
+				if err := sdb.SetMT(lv.Id, lv); err != nil {
+					return err
+				}
 			}
 		}
 	}

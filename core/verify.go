@@ -157,10 +157,12 @@ func VerifyTX(tx *TX, db store.DbImp, flags int) error {
 		case TX_P2SH_WPKH:
 			verifyer = newP2SHWPKHVerify(idx, in, out, tx, typ)
 		case TX_P2WSH_MSIG:
+			flags |= script.SCRIPT_WITNESS_V0_PUBKEYTYPE
 			verifyer = newP2WSHMSIGVerify(idx, in, out, tx, typ)
 		case TX_P2SH_MSIG:
 			verifyer = newP2SHMSIGVerify(idx, in, out, tx, typ)
 		case TX_P2SH_WSH:
+			flags |= script.SCRIPT_WITNESS_V0_PUBKEYTYPE
 			verifyer = newP2SHWSHVerify(idx, in, out, tx, typ)
 		default:
 			return fmt.Errorf("in %d checktype not support,miss Verifyer", idx)

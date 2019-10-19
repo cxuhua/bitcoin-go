@@ -69,16 +69,16 @@ func StartLookUp(ctx context.Context) {
 		conf := config.GetConfig()
 
 		//for test,only connect one
-		ips := []IPPort{{
-			ip:   net.ParseIP("47.97.62.19"),
-			port: 8333,
-		}}
+		//ips := []IPPort{{
+		//	ip:   net.ParseIP("47.97.62.19"),
+		//	port: 8333,
+		//}}
 
-		//ips := []IPPort{}
-		//for _, v := range fixips {
-		//	ips = append(ips, v)
-		//}
-		//ips = append(ips, lookupseeds(ctx, conf)...)
+		ips := []IPPort{}
+		for _, v := range fixips {
+			ips = append(ips, v)
+		}
+		ips = append(ips, lookupseeds(ctx, conf)...)
 
 		ctimer := time.NewTimer(time.Millisecond * 100)
 		checkAll := false

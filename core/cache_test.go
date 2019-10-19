@@ -1,9 +1,16 @@
 package core
 
 import (
+	"sync"
 	"testing"
 	"time"
 )
+
+func TestLock(t *testing.T) {
+	l := sync.Mutex{}
+	l.Lock()
+	l.Unlock()
+}
 
 func TestTXCacher(t *testing.T) {
 	c := NewMemoryCacher(10, time.Second*3)

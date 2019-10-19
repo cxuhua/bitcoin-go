@@ -40,6 +40,7 @@ const (
 	SCRIPT_VERIFY_NULLFAIL                              = (1 << 14)
 	SCRIPT_VERIFY_WITNESS_PUBKEYTYPE                    = (1 << 15)
 	SCRIPT_VERIFY_CONST_SCRIPTCODE                      = (1 << 16)
+	SCRIPT_WITNESS_V0_PUBKEYTYPE                        = (1 << 17)
 )
 
 type OpCodeType byte
@@ -300,6 +301,9 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 			case OP_NOP:
 				break
 			case OP_CHECKLOCKTIMEVERIFY:
+				if flags&SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY == 0 {
+					break
+				}
 				t1 := stack.Top(-1)
 				if t1 == nil {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
@@ -312,6 +316,9 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 					return fmt.Errorf("check locak time error %v", SCRIPT_ERR_UNSATISFIED_LOCKTIME)
 				}
 			case OP_CHECKSEQUENCEVERIFY:
+				if flags&SCRIPT_VERIFY_CHECKSEQUENCEVERIFY == 0 {
+					break
+				}
 				t1 := stack.Top(-1)
 				if t1 == nil {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
@@ -691,10 +698,13 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 				if err := CheckSignatureEncoding(sig, flags); err != nil {
 					return err
 				}
-				if !IsCompressedOrUncompressedPubKey(pub) {
-					return SCRIPT_ERR_PUBKEYTYPE
+				if err := CheckPubKeyEncoding(pub, flags); err != nil {
+					return err
 				}
 				err := checker.CheckSig(stack, sig, pub)
+				if err != nil && flags&SCRIPT_VERIFY_NULLFAIL != 0 && len(sig) > 0 {
+					return SCRIPT_ERR_SIG_NULLFAIL
+				}
 				stack.Pop()
 				stack.Pop()
 				if err != nil {
@@ -750,8 +760,8 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 						return err
 					}
 					pub := stack.Top(-ikey).ToBytes()
-					if !IsCompressedOrUncompressedPubKey(pub) {
-						return SCRIPT_ERR_PUBKEYTYPE
+					if err := CheckPubKeyEncoding(pub, flags); err != nil {
+						return err
 					}
 					err := checker.CheckSig(stack, sig, pub)
 					if err == nil {
@@ -759,6 +769,12 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 						isig++
 					}
 					ikey++
+				}
+				if iok < sigcount && flags&SCRIPT_VERIFY_NULLFAIL != 0 {
+					return SCRIPT_ERR_SIG_NULLFAIL
+				}
+				for ; i > 1; i-- {
+					stack.Pop()
 				}
 				if iok >= sigcount {
 					stack.Push(VsTrue)

@@ -13,9 +13,9 @@ import (
 
 var (
 	//tx memory cacher
-	Txs = NewMemoryCacher(1024*2, time.Minute*30)
+	Txs = NewMemoryCacher(1024*8, time.Minute*30)
 	//block memory cacher
-	Bxs = NewMemoryCacher(256, time.Minute*60)
+	Bxs = NewMemoryCacher(1024*2, time.Minute*60)
 	//test download tx data cacher
 	Dxs = &networkCache{}
 	//test file tx data cache

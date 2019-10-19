@@ -6,8 +6,6 @@ import (
 	"encoding/binary"
 	"sync"
 
-	"go.mongodb.org/mongo-driver/mongo/writeconcern"
-
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
@@ -70,6 +68,29 @@ func BKHeight(h uint32) []byte {
 type mongoDBImp struct {
 	context.Context
 	clist *list.List
+	blist *list.List
+}
+
+//use txcacher
+func (m *mongoDBImp) TopBkCacher() DbCacher {
+	if m.blist.Len() == 0 {
+		return &cacherInvoker{DbCacher: nil}
+	}
+	cacher := m.blist.Front().Value.(DbCacher)
+	return &cacherInvoker{DbCacher: cacher}
+}
+
+//push txcacher
+func (m *mongoDBImp) PushBkCacher(c DbCacher) {
+	m.blist.PushFront(c)
+}
+
+//pop cacher
+func (m *mongoDBImp) PopBkCacher() {
+	if m.blist.Len() == 0 {
+		return
+	}
+	m.blist.Remove(m.blist.Front())
 }
 
 //get dbcacher
@@ -130,12 +151,13 @@ func NewDBImp(ctx context.Context) DbImp {
 	return &mongoDBImp{
 		Context: ctx,
 		clist:   list.New(),
+		blist:   list.New(),
 	}
 }
 
 func InitDB(ctx context.Context) *mongo.Client {
 	dbonce.Do(func() {
-		c := options.Client().ApplyURI("mongodb://127.0.0.1:27017/")
+		c := options.Client().ApplyURI("mongodb://127.0.0.1/?replicaSet=rs")
 		cptr, err := mongo.NewClient(c)
 		if err != nil {
 			panic(err)
@@ -150,11 +172,8 @@ func InitDB(ctx context.Context) *mongo.Client {
 }
 
 func UseSession(ctx context.Context, fn func(db DbImp) error) error {
-	opts := options.Session()
-	wopts := writeconcern.New(writeconcern.W(1), writeconcern.J(true))
-	opts.SetDefaultWriteConcern(wopts)
 	client = InitDB(ctx)
-	return client.UseSessionWithOptions(ctx, opts, func(sess mongo.SessionContext) error {
+	return client.UseSession(ctx, func(sess mongo.SessionContext) error {
 		return fn(NewDBImp(sess))
 	})
 }

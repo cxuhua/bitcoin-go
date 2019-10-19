@@ -83,34 +83,48 @@ var (
 func processBlock(wid int, mdb store.DbImp, c *Client, m *MsgBlock) error {
 	G.Lock()
 	defer G.Unlock()
-	return mdb.Transaction(func(sdb store.DbImp) error {
-		if bh := m.ToBlockHeader(); !G.IsNextBlock(bh) {
-			return fmt.Errorf("can't link prev block,ignore block %v", NewHashID(bh.Hash))
-		} else if err := m.CheckBlock(G.LastBlock(), sdb); err != nil {
-			return fmt.Errorf("check block error %v,ignore save", err)
-		} else {
-			if sdb.HasBK(bh.Hash) {
-				return errors.New("block exists,ignore save ,hash=" + NewHashID(bh.Hash).String())
-			}
-			if err := sdb.SetBK(bh.Hash, bh); err != nil {
-				return fmt.Errorf("DB setbk error %v", err)
-			}
-			if err := m.SaveTXS(sdb); err != nil {
-				return err
-			}
-			if err := m.SyncMoneys(sdb); err != nil {
-				return err
-			}
-			Headers.Remove()
-			G.SetLastBlock(bh)
-			if c != nil {
-				Notice <- c
-				hv := fmt.Sprintf("%.3f", float32(bh.Height)/float32(c.VerInfo.Height))
-				log.Println("Work", wid, "save block:", m.Hash, "height=", bh.Height, "finish=", hv, "from", c.Key(), "OK")
-			}
+	if bh := m.ToBlockHeader(); !G.IsNextBlock(bh) {
+		return fmt.Errorf("can't link prev block,ignore block %v", NewHashID(bh.Hash))
+	} else if err := mdb.SetBK(bh.Hash, bh); err != nil {
+		return fmt.Errorf("DB setbk error %v", err)
+	} else {
+		Headers.Remove()
+		G.SetLastBlock(bh)
+		if c != nil {
+			Notice <- c
+			hv := fmt.Sprintf("%.3f", float32(bh.Height)/float32(c.VerInfo.Height))
+			log.Println("Work", wid, "save block:", m.Hash, "height=", bh.Height, "finish=", hv, "from", c.Key(), "OK")
 		}
-		return nil
-	})
+	}
+	return nil
+	//return mdb.Transaction(func(sdb store.DbImp) error {
+	//	if bh := m.ToBlockHeader(); !G.IsNextBlock(bh) {
+	//		return fmt.Errorf("can't link prev block,ignore block %v", NewHashID(bh.Hash))
+	//	} else if err := m.CheckBlock(G.LastBlock(), sdb); err != nil {
+	//		return fmt.Errorf("check block error %v,ignore save", err)
+	//	} else {
+	//		if sdb.HasBK(bh.Hash) {
+	//			return errors.New("block exists,ignore save ,hash=" + NewHashID(bh.Hash).String())
+	//		}
+	//		if err := sdb.SetBK(bh.Hash, bh); err != nil {
+	//			return fmt.Errorf("DB setbk error %v", err)
+	//		}
+	//		if err := m.SaveTXS(sdb); err != nil {
+	//			return err
+	//		}
+	//		if err := m.SyncMoneys(int(bh.Height), sdb); err != nil {
+	//			return err
+	//		}
+	//		Headers.Remove()
+	//		G.SetLastBlock(bh)
+	//		if c != nil {
+	//			Notice <- c
+	//			hv := fmt.Sprintf("%.3f", float32(bh.Height)/float32(c.VerInfo.Height))
+	//			log.Println("Work", wid, "save block:", m.Hash, "height=", bh.Height, "finish=", hv, "from", c.Key(), "OK")
+	//		}
+	//	}
+	//	return nil
+	//})
 }
 
 func processTX(wid int, db store.DbImp, c *Client, m *MsgTX) error {
@@ -164,7 +178,7 @@ func doWorker(ctx context.Context, wg *sync.WaitGroup, i int) {
 		log.Println("start worker unit", i)
 		defer func() {
 			if err := recover(); err != nil {
-				log.Println("[worker error]:", err)
+				log.Printf("[Recovery] %s panic recovered:%s\n", err, stack(3))
 			}
 		}()
 		for {

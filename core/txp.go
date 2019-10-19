@@ -920,7 +920,7 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 	if !vfee.IsRange() {
 		return errors.New("get coinbase reward error")
 	}
-	flags := m.GetScriptFlags(int(lb.Height + 1))
+	flags := m.GetScriptFlags(height)
 	db.PushTxCacher(NewCacher())
 	defer db.PopTxCacher()
 	for i, v := range m.Txs {
@@ -1009,11 +1009,20 @@ func (m *MsgBlock) Save(db store.DbImp) error {
 }
 
 func LoadBlock(id HashID, db store.DbImp) (*MsgBlock, error) {
+	//from cache get
+	if v, err := db.TopBkCacher().Get(id[:]); err == nil {
+		return v.(*MsgBlock), nil
+	}
 	h := &BlockHeader{}
 	if err := db.GetBK(id[:], h); err != nil {
 		return nil, err
 	}
-	return h.ToBlock(), nil
+	bk := h.ToBlock()
+	if err := bk.LoadTXS(db); err != nil {
+		return nil, err
+	}
+	db.TopBkCacher().Set(id[:], bk)
+	return bk, nil
 }
 
 func (m *MsgBlock) Command() string {

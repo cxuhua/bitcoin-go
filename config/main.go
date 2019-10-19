@@ -44,10 +44,10 @@ type Config struct {
 	//
 	GenesisBlock string
 
-	PowLimit                string
-	PowTargetTimespan       int
-	PowTargetSpacing        int
-	MinerConfirmationWindow int
+	PowLimit          string
+	PowTargetTimespan int
+	PowTargetSpacing  int
+	PowMinerWindow    int
 }
 
 //DifficultyAdjustmentInterval
@@ -76,7 +76,6 @@ func GetConfig() *Config {
 	c.ListenPort = 8333
 
 	c.MaxInConn = 5
-
 	c.MaxOutConn = 5
 
 	c.b58prefixs = map[int][]byte{}
@@ -85,7 +84,7 @@ func GetConfig() *Config {
 	c.PowLimit = "00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
 	c.PowTargetTimespan = 14 * 24 * 60 * 60 // two weeks
 	c.PowTargetSpacing = 10 * 60
-	c.MinerConfirmationWindow = c.PowTargetTimespan / c.PowTargetSpacing
+	c.PowMinerWindow = c.PowTargetTimespan / c.PowTargetSpacing
 	c.GenesisBlock = "000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f"
 
 	c.Seeds = []string{
