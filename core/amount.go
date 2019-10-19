@@ -32,15 +32,24 @@ func (a Amount) IsRange() bool {
 type Moneys struct {
 	Id    []byte `bson:"_id"`   //tx id + out index 32+4
 	Addr  string `bson:"addr"`  //bitcoin address
-	Value uint64 `bson:"value"` //outvalue
+	Value Amount `bson:"value"` //outvalue
+	Lose  Amount `bson:"lose"`  //miss amount
+}
+
+//when,txid same,bitcoin miss
+func (m *Moneys) LoseMoney() *Moneys {
+	m.Id[0] = store.MT_IO_LOSE
+	m.Lose = m.Value
+	m.Value = 0
+	return m
 }
 
 func (m Moneys) TxId() HashID {
-	if len(m.Id) != 36 {
+	if len(m.Id) != 37 {
 		panic(errors.New("id error"))
 	}
 	id := HashID{}
-	copy(id[:], m.Id[:32])
+	copy(id[1:], m.Id[:33])
 	return id
 }
 
@@ -49,10 +58,10 @@ func (m Moneys) GetTx(db store.DbImp) (*TX, error) {
 }
 
 func (m Moneys) OutIdx() uint32 {
-	if len(m.Id) != 36 {
+	if len(m.Id) != 37 {
 		panic(errors.New("id error"))
 	}
-	return ByteOrder.Uint32(m.Id[32:])
+	return ByteOrder.Uint32(m.Id[33:])
 }
 
 func NewMoneys() *Moneys {
@@ -62,10 +71,11 @@ func NewMoneys() *Moneys {
 	return m
 }
 
-func NewMoneyId(txid HashID, idx uint32) []byte {
+func NewMoneyId(txid HashID, idx uint32, io byte) []byte {
 	l := len(HashID{})
-	id := make([]byte, 36)
-	copy(id[0:l], txid[:])
-	ByteOrder.PutUint32(id[l:], idx)
+	id := make([]byte, 37)
+	id[0] = io
+	copy(id[1:l], txid[:])
+	ByteOrder.PutUint32(id[l+1:], idx)
 	return id
 }

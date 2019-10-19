@@ -13,6 +13,11 @@ import (
 )
 
 /*
+
+db.txs.drop();
+db.blocks.drop();
+db.moneys.drop();
+
 db.txs.ensureIndex({block:1,index:-1});
 db.blocks.ensureIndex({height:-1});
 db.moneys.ensureIndex({addr:1});
@@ -146,7 +151,7 @@ func InitDB(ctx context.Context) *mongo.Client {
 
 func UseSession(ctx context.Context, fn func(db DbImp) error) error {
 	opts := options.Session()
-	wopts := writeconcern.New(writeconcern.W(2), writeconcern.J(true))
+	wopts := writeconcern.New(writeconcern.W(1), writeconcern.J(true))
 	opts.SetDefaultWriteConcern(wopts)
 	client = InitDB(ctx)
 	return client.UseSessionWithOptions(ctx, opts, func(sess mongo.SessionContext) error {

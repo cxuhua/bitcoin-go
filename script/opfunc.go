@@ -181,6 +181,23 @@ func (s Script) IsPushOnly() bool {
 	return true
 }
 
+func (s Script) GetSigOpCount() int {
+	n := 0
+	for i := 0; i < s.Len(); {
+		b, p, op, _ := s.GetOp(i)
+		if !b {
+			break
+		}
+		if op >= OP_CHECKSIG || op == OP_CHECKSIGVERIFY {
+			n++
+		} else if op == OP_CHECKMULTISIG || op == OP_CHECKMULTISIGVERIFY {
+			n += MAX_PUBKEYS_PER_MULTISIG
+		}
+		i = p
+	}
+	return n
+}
+
 func (s Script) GetAddress() string {
 	var ab []byte
 	if s.IsP2PK(&ab) || s.IsP2PKH(&ab) {
@@ -243,6 +260,14 @@ func (s Script) IsP2PKH(v ...*[]byte) bool {
 		if len(v) > 0 {
 			*v[0] = s.SubBytes(3, 23)
 		}
+		return b
+	}
+	b = s.Len() >= 25 && s.Len() < MAX_SCRIPT_SIZE && s[0] == OP_DUP && s[1] == OP_HASH160 && s[2] == 20 && s[23] == OP_EQUALVERIFY && s[24] == OP_CHECKSIG
+	if b {
+		if len(v) > 0 {
+			*v[0] = s.SubBytes(3, 23)
+		}
+		return b
 	}
 	return b
 }

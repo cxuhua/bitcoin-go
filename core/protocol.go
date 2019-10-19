@@ -2,10 +2,12 @@ package core
 
 import (
 	"bitcoin/config"
+	"bitcoin/script"
 	"bitcoin/util"
 	"bytes"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"time"
@@ -249,6 +251,9 @@ func (m *NetHeader) ReadHeader(r io.Reader) error {
 	pl := uint32(0)
 	if err := binary.Read(r, ByteOrder, &pl); err != nil {
 		return err
+	}
+	if pl > script.MAX_BLOCK_SERIALIZED_SIZE+m.HeadLen() {
+		return fmt.Errorf("packet too big %d", pl)
 	}
 	m.Payload = make([]byte, pl)
 	m.CheckSum = []byte{0, 0, 0, 0}

@@ -98,7 +98,7 @@ func processBlock(wid int, mdb store.DbImp, c *Client, m *MsgBlock) error {
 			if err := m.SaveTXS(sdb); err != nil {
 				return err
 			}
-			if err := AvailableBlockComing(sdb, m); err != nil {
+			if err := m.SyncMoneys(sdb); err != nil {
 				return err
 			}
 			Headers.Remove()

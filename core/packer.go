@@ -26,7 +26,7 @@ type baseSigPacker struct {
 }
 
 func (sp *baseSigPacker) Pack(imp ISigScript) ([]byte, error) {
-	if sp.ht != script.SIGHASH_ALL {
+	if sp.ht != script.SIGHASH_ALL && sp.ht != 0 {
 		return nil, fmt.Errorf("hash type %d not support imp", sp.ht)
 	}
 	w := NewMsgWriter()

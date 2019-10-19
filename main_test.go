@@ -4,9 +4,16 @@ import (
 	"bitcoin/core"
 	"bitcoin/store"
 	"context"
+	"encoding/base64"
+	"encoding/hex"
 	"log"
 	"testing"
 )
+
+func TestXX(t *testing.T) {
+	b, _ := base64.StdEncoding.DecodeString("mC25hwpeMNjwsqTrzMWFK1oeJBPpJ0xJR7/sa9qpudcAAAAA")
+	log.Println(hex.EncodeToString(b))
+}
 
 func TestRunClient(t *testing.T) {
 	store.UseSession(context.Background(), func(db store.DbImp) error {
