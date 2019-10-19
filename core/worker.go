@@ -86,7 +86,7 @@ func processBlock(wid int, c *Client, m *MsgBlock) error {
 		return fmt.Errorf("can't link prev block,ignore block %v", m.Hash)
 	}
 	if err := m.Save(true); err != nil {
-		return fmt.Errorf("DB save block error %v", err)
+		return fmt.Errorf("DB save block error %w", err)
 	}
 	Headers.Remove()
 	G.SetBestBlock(m)

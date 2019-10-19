@@ -213,7 +213,7 @@ func (m *MsgBlock) Save(sb bool) error {
 			}
 			outtx, err := LoadTx(in.OutHash)
 			if err != nil {
-				return fmt.Errorf("load outtx failed: %v, tx=%v[%d] miss", err, in.OutHash, in.OutIndex)
+				return fmt.Errorf("load outtx failed: %w, tx=%v[%d] miss", err, in.OutHash, in.OutIndex)
 			}
 			if int(in.OutIndex) >= len(outtx.Outs) {
 				return fmt.Errorf("outindex outbound outs block=%v tx=%v", m.Hash, tx.Hash)
