@@ -102,7 +102,6 @@ type DbImp interface {
 	DelBK(id []byte) error
 	//transaction
 	Transaction(fn func(db DbImp) error) error
-
 	//use txcacher
 	TopBkCacher() DbCacher
 	//push txcacher
