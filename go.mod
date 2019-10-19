@@ -9,6 +9,7 @@ require (
 	github.com/google/go-cmp v0.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0
 	github.com/stretchr/testify v1.4.0 // indirect
+	github.com/syndtr/goleveldb v1.0.0 // indirect
 	github.com/tidwall/pretty v1.0.0 // indirect
 	github.com/willf/bitset v1.1.10
 	github.com/willf/bloom v2.0.3+incompatible // indirect
