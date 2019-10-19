@@ -21,7 +21,7 @@ func TestP2WPKHSign(t *testing.T) {
 				return fmt.Errorf("get out %d address", i)
 			}
 		}
-		return VerifyTX(tx2, db)
+		return VerifyTX(tx2, db, 0)
 	})
 	if err != nil {
 		t.Errorf("Verify test failed  err=%v", err)
@@ -44,7 +44,7 @@ func TestP2SHMSIGSign(t *testing.T) {
 				return fmt.Errorf("get out %d address", i)
 			}
 		}
-		return VerifyTX(tx2, db)
+		return VerifyTX(tx2, db, 0)
 	})
 	if err != nil {
 		t.Errorf("Verify test failed  err=%v", err)
@@ -67,7 +67,7 @@ func TestP2WSHMSIGSign(t *testing.T) {
 				return fmt.Errorf("get out %d address", i)
 			}
 		}
-		return VerifyTX(tx2, db)
+		return VerifyTX(tx2, db, 0)
 	})
 	if err != nil {
 		t.Errorf("Verify test failed  err=%v", err)
@@ -90,7 +90,7 @@ func TestP2SHWPKHSign(t *testing.T) {
 				return fmt.Errorf("get out %d address", i)
 			}
 		}
-		return VerifyTX(tx2, db)
+		return VerifyTX(tx2, db, 0)
 	})
 	if err != nil {
 		t.Errorf("Verify test failed  err=%v", err)
@@ -113,7 +113,7 @@ func TestP2PKSign(t *testing.T) {
 				return fmt.Errorf("get out %d address", i)
 			}
 		}
-		return VerifyTX(tx2, db)
+		return VerifyTX(tx2, db, 0)
 	})
 	if err != nil {
 		t.Errorf("Verify test failed  err=%v", err)
@@ -136,7 +136,7 @@ func TestP2PKHSign(t *testing.T) {
 				return fmt.Errorf("get out %d address", i)
 			}
 		}
-		return VerifyTX(tx2, db)
+		return VerifyTX(tx2, db, 0)
 	})
 	if err != nil {
 		t.Errorf("Verify test failed  err=%v", err)

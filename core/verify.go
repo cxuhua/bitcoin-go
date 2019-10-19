@@ -15,7 +15,7 @@ var (
 
 type Verifyer interface {
 	//check sig
-	Verify(db store.DbImp) error
+	Verify(db store.DbImp, flags int) error
 	//sig data packer
 	Packer(sig *script.SigValue) SigPacker
 }
@@ -129,7 +129,7 @@ func CheckTXType(in *TxIn, out *TxOut) TXType {
 	return TX_UNKNOW
 }
 
-func VerifyTX(tx *TX, db store.DbImp) error {
+func VerifyTX(tx *TX, db store.DbImp, flags int) error {
 	if tx == nil {
 		return errors.New("args nil")
 	}
@@ -165,7 +165,7 @@ func VerifyTX(tx *TX, db store.DbImp) error {
 		default:
 			return fmt.Errorf("in %d checktype not support,miss Verifyer", idx)
 		}
-		if err := verifyer.Verify(db); err != nil {
+		if err := verifyer.Verify(db, flags); err != nil {
 			return fmt.Errorf("Verifyer in %d error %v", idx, err)
 		}
 	}

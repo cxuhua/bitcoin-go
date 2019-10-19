@@ -63,7 +63,7 @@ func (vfy *p2shMSIGVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byt
 	return nil
 }
 
-func (vfy *p2shMSIGVerify) Verify(db store.DbImp) error {
+func (vfy *p2shMSIGVerify) Verify(db store.DbImp, flags int) error {
 	stack := script.NewStack()
 	if vfy.in.Script == nil {
 		return errors.New("in script error nil")
@@ -90,7 +90,7 @@ func (vfy *p2shMSIGVerify) Verify(db store.DbImp) error {
 	sv := script.NewScript([]byte{})
 	sv = sv.PushBytes(*vfy.pkscript)
 	sv = sv.Concat(vfy.out.Script)
-	if err := sv.Eval(stack, vfy); err != nil {
+	if err := sv.Eval(stack, vfy, flags); err != nil {
 		return err
 	}
 	if !script.StackTopBool(stack, -1) {
@@ -103,7 +103,7 @@ func (vfy *p2shMSIGVerify) Verify(db store.DbImp) error {
 		sv.PushBytes(*v)
 	}
 	sv.Concat(vfy.pkscript)
-	if err := sv.Eval(stack, vfy); err != nil {
+	if err := sv.Eval(stack, vfy, flags); err != nil {
 		return err
 	}
 	if !script.StackTopBool(stack, -1) {

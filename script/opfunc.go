@@ -54,6 +54,26 @@ func GetScriptNum(b []byte) ScriptNum {
 	return ScriptNum(result)
 }
 
+func IsDefinedHashtypeSignature(sig []byte) bool {
+	if len(sig) == 0 {
+		return false
+	}
+	ht := sig[len(sig)-1] &^ SIGHASH_ANYONECANPAY
+	if ht < SIGHASH_ALL || ht > SIGHASH_SINGLE {
+		return false
+	}
+	return true
+}
+
+func IsLowDERSignature(sig []byte) error {
+	if !IsValidSignatureEncoding(sig) {
+		return SCRIPT_ERR_SIG_DER
+	}
+	nsig := sig[:len(sig)-1]
+	_, _, err := CheckLowS(nsig)
+	return err
+}
+
 func IsValidSignatureEncoding(sig []byte) bool {
 	if len(sig) < 9 {
 		return false
@@ -101,6 +121,20 @@ func IsValidSignatureEncoding(sig []byte) bool {
 		return false
 	}
 	return true
+}
+
+func CheckSignatureEncoding(sig []byte, flags int) error {
+	if len(sig) == 0 {
+		return nil
+	}
+	if flags&(SCRIPT_VERIFY_DERSIG|SCRIPT_VERIFY_LOW_S|SCRIPT_VERIFY_STRICTENC) != 0 && !IsValidSignatureEncoding(sig) {
+		return SCRIPT_ERR_SIG_DER
+	} else if err := IsLowDERSignature(sig); flags&SCRIPT_VERIFY_LOW_S != 0 && err != nil {
+		return err
+	} else if flags&SCRIPT_VERIFY_STRICTENC != 0 && !IsDefinedHashtypeSignature(sig) {
+		return SCRIPT_ERR_SIG_HASHTYPE
+	}
+	return nil
 }
 
 func IsCompressedOrUncompressedPubKey(pb []byte) bool {

@@ -878,6 +878,34 @@ func (m *MsgBlock) checkBits(lb *BlockHeader, db store.DbImp) (int, error) {
 	return height, nil
 }
 
+func IsScriptWitnessEnabled(conf *config.Config) bool {
+	return conf.SegwitHeight != script.INT_MAX
+}
+
+func (m *MsgBlock) GetScriptFlags(height int) int {
+	flags := script.SCRIPT_VERIFY_NONE
+	conf := config.GetConfig()
+	if conf.BIP16Exception == "" || m.Hash.String() != conf.BIP16Exception {
+		flags |= script.SCRIPT_VERIFY_P2SH
+	}
+	if flags&script.SCRIPT_VERIFY_P2SH != 0 && IsScriptWitnessEnabled(conf) {
+		flags |= script.SCRIPT_VERIFY_WITNESS
+	}
+	if height >= conf.BIP66Height {
+		flags |= script.SCRIPT_VERIFY_DERSIG
+	}
+	if height >= conf.BIP65Height {
+		flags |= script.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY
+	}
+	if height >= conf.CSVHeight {
+		flags |= script.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY
+	}
+	if height >= conf.SegwitHeight {
+		flags |= script.SCRIPT_VERIFY_NULLDUMMY
+	}
+	return flags
+}
+
 //check recv block
 func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 	txids := []HashID{}
@@ -892,6 +920,7 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 	if !vfee.IsRange() {
 		return errors.New("get coinbase reward error")
 	}
+	flags := m.GetScriptFlags(int(lb.Height + 1))
 	db.PushTxCacher(NewCacher())
 	defer db.PopTxCacher()
 	for i, v := range m.Txs {
@@ -905,7 +934,7 @@ func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
 		if i == 4 {
 			log.Println("a")
 		}
-		if err := VerifyTX(v, db); err != nil {
+		if err := VerifyTX(v, db, flags); err != nil {
 			return fmt.Errorf("verify tx error %v", err)
 		}
 		txids = append(txids, v.Hash)

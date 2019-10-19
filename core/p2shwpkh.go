@@ -70,13 +70,13 @@ func (vfy *p2shwpkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byt
 	return nil
 }
 
-func (vfy *p2shwpkhVerify) Verify(db store.DbImp) error {
+func (vfy *p2shwpkhVerify) Verify(db store.DbImp, flags int) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	//concat hash equal script
 	sv = sv.Concat(vfy.in.Script)
 	sv = sv.Concat(vfy.out.Script)
-	if err := sv.Eval(stack, vfy); err != nil {
+	if err := sv.Eval(stack, vfy, flags); err != nil {
 		return err
 	}
 	if !script.StackTopBool(stack, -1) {
@@ -91,7 +91,7 @@ func (vfy *p2shwpkhVerify) Verify(db store.DbImp) error {
 	//add sig check op code
 	sv = sv.PushOp(script.OP_CHECKSIG)
 	//run script checksig
-	if err := sv.Eval(stack, vfy); err != nil {
+	if err := sv.Eval(stack, vfy, flags); err != nil {
 		return err
 	}
 	if !script.StackTopBool(stack, -1) {

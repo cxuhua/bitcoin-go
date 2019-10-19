@@ -66,7 +66,7 @@ func (vfy *p2wpkhVerify) CheckSig(stack *script.Stack, sigv []byte, pubv []byte)
 	return nil
 }
 
-func (vfy *p2wpkhVerify) Verify(db store.DbImp) error {
+func (vfy *p2wpkhVerify) Verify(db store.DbImp, flags int) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	//push sig pub data
@@ -75,7 +75,7 @@ func (vfy *p2wpkhVerify) Verify(db store.DbImp) error {
 	}
 	sv.Concat(vfy.SigScript())
 	//run script checksig
-	if err := sv.Eval(stack, vfy); err != nil {
+	if err := sv.Eval(stack, vfy, flags); err != nil {
 		return err
 	}
 	if !script.StackTopBool(stack, -1) {

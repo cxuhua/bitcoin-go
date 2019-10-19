@@ -200,20 +200,28 @@ func (sig SigValue) Encode() []byte {
 	return res.Bytes()
 }
 
-func (sig *SigValue) Decode(b []byte) error {
+func CheckLowS(b []byte) (int, int, error) {
 	if b[0] != 0x30 || len(b) < 5 {
-		return errors.New("der format error")
+		return 0, 0, errors.New("der format error")
 	}
 	lenr := int(b[3])
 	if lenr == 0 || 5+lenr >= len(b) || b[lenr+4] != 0x02 {
-		return errors.New("der length error")
+		return 0, 0, errors.New("der length error")
 	}
 	lens := int(b[lenr+5])
 	if lens == 0 || int(b[1]) != lenr+lens+4 || lenr+lens+6 > len(b) || b[2] != 0x02 {
-		return errors.New("der length error")
+		return 0, 0, errors.New("der length error")
 	}
-	sig.R = new(big.Int).SetBytes(b[4 : 4+lenr])
-	sig.S = new(big.Int).SetBytes(b[6+lenr : 6+lenr+lens])
+	return lenr, lens, nil
+}
+
+func (sig *SigValue) Decode(b []byte) error {
+	if r, s, err := CheckLowS(b); err != nil {
+		return err
+	} else {
+		sig.R = new(big.Int).SetBytes(b[4 : 4+r])
+		sig.S = new(big.Int).SetBytes(b[6+r : 6+r+s])
+	}
 	sig.HashType = b[len(b)-1]
 	return nil
 }

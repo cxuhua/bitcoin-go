@@ -81,9 +81,9 @@ var (
 )
 
 func processBlock(wid int, mdb store.DbImp, c *Client, m *MsgBlock) error {
+	G.Lock()
+	defer G.Unlock()
 	return mdb.Transaction(func(sdb store.DbImp) error {
-		G.Lock()
-		defer G.Unlock()
 		if bh := m.ToBlockHeader(); !G.IsNextBlock(bh) {
 			return fmt.Errorf("can't link prev block,ignore block %v", NewHashID(bh.Hash))
 		} else if err := m.CheckBlock(G.LastBlock(), sdb); err != nil {

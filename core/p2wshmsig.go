@@ -69,7 +69,7 @@ func (vfy *p2wshMSIGVerify) checkPublicHash() bool {
 	return bytes.Equal(hv1, hv2)
 }
 
-func (vfy *p2wshMSIGVerify) Verify(db store.DbImp) error {
+func (vfy *p2wshMSIGVerify) Verify(db store.DbImp, flags int) error {
 	stack := script.NewStack()
 	sv := script.NewScript([]byte{})
 	vfy.hsidx = -1
@@ -86,7 +86,7 @@ func (vfy *p2wshMSIGVerify) Verify(db store.DbImp) error {
 	if vfy.hsidx < 0 || !vfy.checkPublicHash() {
 		return errors.New("check public hash error")
 	}
-	if err := sv.Eval(stack, vfy); err != nil {
+	if err := sv.Eval(stack, vfy, flags); err != nil {
 		return err
 	}
 	if !script.StackTopBool(stack, -1) {

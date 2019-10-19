@@ -28,7 +28,13 @@ type Config struct {
 	//local listen ip port
 	LocalAddr string //ip:port
 	//
-	SegwitHeight uint
+	BIP16Exception string
+	BIP34Height    int
+	BIP34Hash      string
+	BIP65Height    int
+	BIP66Height    int
+	CSVHeight      int
+	SegwitHeight   int
 
 	b58prefixs map[int][]byte
 	//210000
@@ -95,7 +101,13 @@ func GetConfig() *Config {
 	c.SubVer = "/golang:0.1.0/"
 	c.LocalAddr = "192.168.31.198:8333"
 
-	c.SegwitHeight = 481824
+	c.BIP16Exception = "00000000000002dc756eebf4f49723ed8d30cc28a5f108eb94b1ba88ac4f9c22"
+	c.BIP34Height = 227931
+	c.BIP34Hash = "000000000000024b89b42a942fe0d9fea3bb44ab7bd1b19115dd6a759c0808b8"
+	c.BIP65Height = 388381  // 000000000000000004c2b624ed5d7756c508d90fd0da2c7c679febfa6c4735f0
+	c.BIP66Height = 363725  // 00000000000000000379eaa19dce8c9b722d46ae6a57c2f1a988119488b50931
+	c.CSVHeight = 419328    // 000000000000000004a1b34462cb8aeebd5799177f7a29cf28f2d1961716b5b5
+	c.SegwitHeight = 481824 // 0000000000000000001c8018d9cb3b742ef25114f27563e3fc4a1902167f9893
 	//
 	c.b58prefixs[PUBKEY_ADDRESS] = []byte{0}
 	c.b58prefixs[SCRIPT_ADDRESS] = []byte{5}

@@ -21,6 +21,27 @@ const (
 	MAX_BLOCK_SERIALIZED_SIZE = 4000000
 )
 
+const (
+	SCRIPT_VERIFY_NONE                                  = 0
+	SCRIPT_VERIFY_P2SH                                  = (1 << 0)
+	SCRIPT_VERIFY_STRICTENC                             = (1 << 1)
+	SCRIPT_VERIFY_DERSIG                                = (1 << 2)
+	SCRIPT_VERIFY_LOW_S                                 = (1 << 3)
+	SCRIPT_VERIFY_NULLDUMMY                             = (1 << 4)
+	SCRIPT_VERIFY_SIGPUSHONLY                           = (1 << 5)
+	SCRIPT_VERIFY_MINIMALDATA                           = (1 << 6)
+	SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_NOPS            = (1 << 7)
+	SCRIPT_VERIFY_CLEANSTACK                            = (1 << 8)
+	SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY                   = (1 << 9)
+	SCRIPT_VERIFY_CHECKSEQUENCEVERIFY                   = (1 << 10)
+	SCRIPT_VERIFY_WITNESS                               = (1 << 11)
+	SCRIPT_VERIFY_DISCOURAGE_UPGRADABLE_WITNESS_PROGRAM = (1 << 12)
+	SCRIPT_VERIFY_MINIMALIF                             = (1 << 13)
+	SCRIPT_VERIFY_NULLFAIL                              = (1 << 14)
+	SCRIPT_VERIFY_WITNESS_PUBKEYTYPE                    = (1 << 15)
+	SCRIPT_VERIFY_CONST_SCRIPTCODE                      = (1 << 16)
+)
+
 type OpCodeType byte
 
 const (
@@ -244,7 +265,7 @@ var (
 )
 
 //stack []byte
-func (s Script) Eval(stack *Stack, checker SigChecker) error {
+func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 	if s.Len() > MAX_SCRIPT_SIZE {
 		return SCRIPT_ERR_STACK_SIZE
 	}
@@ -667,8 +688,8 @@ func (s Script) Eval(stack *Stack, checker SigChecker) error {
 				}
 				sig := stack.Top(-2).ToBytes()
 				pub := stack.Top(-1).ToBytes()
-				if !IsValidSignatureEncoding(sig) {
-					return SCRIPT_ERR_SIG_DER
+				if err := CheckSignatureEncoding(sig, flags); err != nil {
+					return err
 				}
 				if !IsCompressedOrUncompressedPubKey(pub) {
 					return SCRIPT_ERR_PUBKEYTYPE
