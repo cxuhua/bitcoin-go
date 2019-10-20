@@ -3,12 +3,14 @@ package core
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
-	"log"
-	"sync"
-
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/syndtr/goleveldb/leveldb/util"
+	"io/ioutil"
+	"log"
+	"sync"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -33,6 +35,73 @@ func DB() *leveldb.DB {
 	return dbptr
 }
 
+type Chain struct {
+	mu   sync.Mutex
+	Hash []HashID
+	best string
+}
+
+func GetChain(b string, h int) *Chain {
+	return NewChain(b, h)
+}
+
+func NewChain(b string, h int) *Chain {
+	c := &Chain{}
+	c.Hash = make([]HashID, h+1)
+	c.best = b
+	return c
+}
+
+func (c *Chain) WriteDB(path string, lh int) error {
+	if lh == 0 {
+		lh = -1
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	bhash := NewHashID(c.best)
+	for idx := len(c.Hash) - 1; idx >= lh+1; idx-- {
+		file := path + "\\" + bhash.String()
+		data, err := ioutil.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		h := NewNetHeader(data)
+		m := &MsgBlock{}
+		m.Read(h)
+		m.Height = uint32(idx)
+		if !bhash.Equal(m.Hash) {
+			return fmt.Errorf("connect chain error %v -> %v", m.Hash, bhash)
+		}
+		c.Hash[idx] = m.Hash
+		bhash = m.Prev
+		if idx%100 == 0 {
+			log.Println("load block ", idx, m.Hash, m.Height, "OK")
+		}
+	}
+	for i := lh + 1; i < len(c.Hash); i++ {
+		file := path + "\\" + c.Hash[i].String()
+		data, err := ioutil.ReadFile(file)
+		if err != nil {
+			return err
+		}
+		h := NewNetHeader(data)
+		m := &MsgBlock{}
+		m.Read(h)
+		if !G.IsNextBlock(m) {
+			return errors.New("connect to next block error")
+		}
+		if err := m.Check(); err != nil {
+			return err
+		}
+		if err := m.Connect(true); err != nil {
+			return err
+		}
+		G.SetBestBlock(m)
+		log.Println(c.Hash[i], i, "WRITE OK")
+	}
+	return nil
+}
+
 const (
 	//blocks key prefix
 	TPrefixBlock = byte(1)
@@ -43,11 +112,48 @@ const (
 	//address key prefix
 	TPrefixAddress = byte(3)
 
+	//height index(4) -> blockid
+	TPrefixHeight = byte(4)
+
 	//Best block hash key -> blockid
 	TBestBlockHashKey = "TBestBlockHashKey"
 )
 
+func LoadHeightBlock(h uint32) (*MsgBlock, error) {
+	hkey := NewTHeightKey(h)
+	hv, err := DB().Get(hkey[:], nil)
+	if err != nil {
+		return nil, fmt.Errorf("load height block %w h=%d", err, h)
+	}
+	return LoadBlock(NewHashID(hv))
+}
+
+type THeightKey [5]byte
+
+func NewTHeightKey(h uint32) THeightKey {
+	k := THeightKey{}
+	k[0] = TPrefixHeight
+	ByteOrder.PutUint32(k[1:], h)
+	return k
+}
+
 type TAddrKey []byte
+
+func (a TAddrKey) GetIndex() uint32 {
+	off := a[1] + 2 + 32
+	return ByteOrder.Uint32(a[off : off+4])
+}
+
+func (a TAddrKey) GetTx() HashID {
+	off := a[1] + 2
+	bb := a[off : off+32]
+	return NewHashID([]byte(bb))
+}
+
+func (a TAddrKey) GetAddr() string {
+	al := a[1]
+	return string(a[2 : al+2])
+}
 
 //prefix[1] addrlen[1] addr(mstring) TxHashId[32]-index[4] -> int64(amount)
 func NewTAddrKey(addr string, txid HashID, idx uint32) TAddrKey {
@@ -61,19 +167,32 @@ func NewTAddrKey(addr string, txid HashID, idx uint32) TAddrKey {
 }
 
 func (k TAddrKey) String() string {
-	buf := bytes.NewReader(k)
-	buf.ReadByte()
-	al, _ := buf.ReadByte()
-	ab := make([]byte, al)
-	buf.Read(ab)
-	txid := HashID{}
-	buf.Read(txid[:])
-	idx := uint32(0)
-	binary.Read(buf, ByteOrder, &idx)
-	return "A= " + string(ab) + " TX= " + txid.String() + " IDX= " + fmt.Sprintf("%d", idx)
+	return "A= " + k.GetAddr() + " TX= " + k.GetTx().String() + " IDX= " + fmt.Sprintf("%d", k.GetIndex())
 }
 
 type TAddrValue [8]byte
+
+type TAddrElement struct {
+	TAddrKey
+	TAddrValue
+}
+
+func ListAddrValues(addr string) []TAddrElement {
+	eles := []TAddrElement{}
+	prefix := util.BytesPrefix(append([]byte{TPrefixAddress, byte(len(addr))}, []byte(addr)...))
+	iter := DB().NewIterator(prefix, nil)
+	for iter.Next() {
+		v := TAddrValue{}
+		copy(v[:], iter.Value())
+		ele := TAddrElement{TAddrKey: iter.Key(), TAddrValue: v}
+		eles = append(eles, ele)
+	}
+	return eles
+}
+
+func (a TAddrValue) GetValue() Amount {
+	return Amount(ByteOrder.Uint64(a[:]))
+}
 
 func NewTAddrValue(v uint64) TAddrValue {
 	v8 := TAddrValue{}
@@ -82,8 +201,7 @@ func NewTAddrValue(v uint64) TAddrValue {
 }
 
 func (a TAddrValue) String() string {
-	u64 := ByteOrder.Uint64(a[:])
-	return fmt.Sprintf("%d", u64)
+	return fmt.Sprintf("%d", a.GetValue())
 }
 
 type TBlockKey [33]byte
@@ -99,6 +217,12 @@ func NewTTxValue(hv HashID, idx uint32) TTxValue {
 	buf.Write(hv[:])
 	binary.Write(buf, ByteOrder, idx)
 	return buf.Bytes()
+}
+
+func HasTx(hv HashID) bool {
+	tkey := NewTxKey(hv)
+	ok, err := DB().Has(tkey[:], nil)
+	return err == nil && ok
 }
 
 //value: height(4)+block data
@@ -150,7 +274,9 @@ func LoadBestBlock() (*MsgBlock, error) {
 }
 
 func LoadBlock(id HashID) (*MsgBlock, error) {
-	//cache
+	if bv, err := BlockCacheGet(id); err == nil {
+		return bv, nil
+	}
 	key := NewTBlockKey(id)
 	bb, err := DB().Get(key[:], nil)
 	if err != nil {
@@ -159,8 +285,7 @@ func LoadBlock(id HashID) (*MsgBlock, error) {
 	bv := TBlock(bb)
 	m := bv.ToBlock()
 	m.Height = bv.Height()
-	//
-	return m, nil
+	return BlockCacheSet(id, m)
 }
 
 func (v TTxValue) TxIndex() uint32 {
@@ -183,11 +308,18 @@ func (v TTxValue) GetTx() (*TX, error) {
 
 func LoadTx(tx HashID) (*TX, error) {
 	//cache
+	if tv, err := TxCacheGet(tx); err == nil {
+		return tv, nil
+	}
 	v, err := LoadTxValue(tx)
 	if err != nil {
 		return nil, err
 	}
-	return v.GetTx()
+	tv, err := v.GetTx()
+	if err != nil {
+		return nil, err
+	}
+	return TxCacheSet(tx, tv)
 }
 
 func LoadTxValue(tx HashID) (TTxValue, error) {
@@ -195,73 +327,11 @@ func LoadTxValue(tx HashID) (TTxValue, error) {
 	return DB().Get(txkey[:], nil)
 }
 
-//sb = save best
-func (m *MsgBlock) Save(sb bool) error {
-	batch := &leveldb.Batch{}
-	//save block data
-	bkey := NewTBlockKey(m.Hash)
-	batch.Put(bkey[:], NewTBlock(m))
-	//save tx index,addr index
-	for idx, tx := range m.Txs {
-		//txid  -> block txs[idx]
-		txkey := NewTxKey(tx.Hash)
-		batch.Put(txkey[:], NewTTxValue(m.Hash, uint32(idx)))
-		//cost value
-		for iidx, in := range tx.Ins {
-			if iidx == 0 && tx.IsCoinBase() {
-				continue
-			}
-			outtx, err := LoadTx(in.OutHash)
-			if err != nil {
-				return fmt.Errorf("load outtx failed: %w, tx=%v[%d] miss", err, in.OutHash, in.OutIndex)
-			}
-			if int(in.OutIndex) >= len(outtx.Outs) {
-				return fmt.Errorf("outindex outbound outs block=%v tx=%v", m.Hash, tx.Hash)
-			}
-			outv := outtx.Outs[in.OutIndex]
-			if outv.Script == nil {
-				return fmt.Errorf("out script nil,error")
-			}
-			if outv.Value == 0 {
-				continue
-			}
-			addr := outv.Script.GetAddress()
-			if addr == "" {
-				log.Println("warn, address parse failed 1")
-				continue
-			}
-			//cost addr
-			akey := NewTAddrKey(addr, in.OutHash, in.OutIndex)
-			batch.Delete(akey)
-		}
-		//get value
-		for oidx, out := range tx.Outs {
-			if out.Value == 0 {
-				continue
-			}
-			if out.Script == nil {
-				return fmt.Errorf("out script nil,error")
-			}
-			addr := out.Script.GetAddress()
-			if addr == "" {
-				log.Println("warn, address parse failed 2")
-				continue
-			}
-			akey := NewTAddrKey(addr, tx.Hash, uint32(oidx))
-			aval := NewTAddrValue(out.Value)
-			batch.Put(akey, aval[:])
-		}
-	}
-	//update best block
-	if sb {
-		batch.Put([]byte(TBestBlockHashKey), m.Hash[:])
-	}
-	return DB().Write(batch, nil)
-}
-
 func NewTBlock(m *MsgBlock) TBlock {
-	b := make(TBlock, 4+len(m.Body))
+	h := NewNetHeader()
+	m.Write(h)
+	b := make(TBlock, 4+h.Len())
 	ByteOrder.PutUint32(b[:4], m.Height)
-	copy(b[4:], m.Body)
+	copy(b[4:], h.Payload)
 	return b
 }

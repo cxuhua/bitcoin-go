@@ -141,7 +141,7 @@ func VerifyTX(tx *TX, flags int) error {
 	for idx, in := range tx.Ins {
 		out, err := in.OutTx()
 		if err != nil {
-			return fmt.Errorf("load ref out error %v", err)
+			return fmt.Errorf("load ref out error %w", err)
 		}
 		typ := CheckTXType(in, out)
 		if typ == TX_UNKNOW {

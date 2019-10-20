@@ -5,6 +5,9 @@ import (
 	"bitcoin/script"
 	"bytes"
 	"errors"
+	"fmt"
+	"github.com/syndtr/goleveldb/leveldb"
+	"log"
 	"math"
 
 	"github.com/willf/bitset"
@@ -96,7 +99,7 @@ func (m *TxIn) OutTx() (*TxOut, error) {
 	}
 	tx, err := LoadTx(m.OutHash)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%v %w", m.OutHash, err)
 	}
 	if int(m.OutIndex) >= len(tx.Outs) {
 		return nil, errors.New("out index outbound pre tx outs")
@@ -188,36 +191,17 @@ type TX struct {
 	Ins      []*TxIn
 	Outs     []*TxOut
 	LockTime uint32
-	wbpos    int    //witness wpos begin
-	wepos    int    //witness wpos end
-	Witness  []byte //Witnesses data
-	bbpos    int    //body begin pos
-	bepos    int    //body end pos
-	Body     []byte //body data PS: not include witness data and flag
-	rbpos    int    //raw data begin
-	repos    int    //raw data end
-	Raw      []byte //raw data
-}
-
-func (m *TX) TotalWeight() int {
-	w := len(m.Witness) + len(m.Body)
-	if m.HasWitness() {
-		w += 2
-	}
-	return w
-}
-
-func (m *TX) BaseWeight() int {
-	return len(m.Body)
+	Base     int
+	Size     int
 }
 
 func (m *TX) VirtualSize() int {
-	v := float64(m.Weight()) / 4.0
+	v := float64(m.GetWeight()) / 4.0
 	return int(math.Floor(v + 0.5))
 }
 
-func (m *TX) Weight() int {
-	return m.BaseWeight()*3 + m.TotalWeight()
+func (m *TX) GetWeight() int {
+	return m.Base*3 + m.Size
 }
 
 func NewTX(bid HashID, idx uint32) *TX {
@@ -225,34 +209,6 @@ func NewTX(bid HashID, idx uint32) *TX {
 		Block: bid,
 		Index: uint32(idx),
 	}
-}
-
-type TXHeader struct {
-	Id    []byte `bson:"_id"`
-	Block []byte `bson:"block"` //block id
-	Index uint32 `bson:"index"` //block tx index
-	Ver   int32  `bson:"ver"`
-	State int8   `bson:"state"`
-	Raw   []byte `bson:"raw"`
-}
-
-func (txh *TXHeader) ToTX() *TX {
-	tx := &TX{}
-	h := NewNetHeader(txh.Raw)
-	tx.Read(h)
-	copy(tx.Block[:], txh.Block)
-	tx.Index = txh.Index
-	return tx
-}
-
-func NewTXFrom(tx *TX) *TXHeader {
-	txh := &TXHeader{}
-	txh.Id = tx.Hash[:]
-	txh.Ver = tx.Ver
-	txh.Raw = tx.Raw
-	txh.Block = tx.Block[:]
-	txh.Index = tx.Index
-	return txh
 }
 
 //check tx ,return trans fee
@@ -309,8 +265,8 @@ func (m *TX) Clone() *TX {
 		v.Outs[i] = ov.Clone()
 	}
 	v.LockTime = m.LockTime
-	v.Body = m.Body
-	v.Witness = m.Witness
+	v.Base = m.Base
+	v.Size = m.Size
 	return v
 }
 
@@ -424,31 +380,28 @@ func (m *TX) IsCoinBase() bool {
 }
 
 func (m *TX) ReadWitnesses(h *NetHeader) {
-	m.wbpos = h.Pos()
 	for i, _ := range m.Ins {
 		v := &TxWitnesses{}
 		v.Read(h)
 		m.Ins[i].Witness = v
 	}
-	m.wepos = h.Pos()
-	m.Witness = h.SubBytes(m.wbpos, m.wepos)
 }
 
 func (m *TX) Read(h *NetHeader) {
-	m.rbpos = h.Pos()
+	rbpos := h.Pos()
 	buf := bytes.Buffer{}
 	//+ver
-	m.bbpos = h.Pos()
+	bbpos := h.Pos()
 	m.Ver = int32(h.ReadUInt32())
-	m.bepos = h.Pos()
-	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+	bepos := h.Pos()
+	buf.Write(h.SubBytes(bbpos, bepos))
 	//check flag for witnesses
 	m.Flag = h.Peek(2)
 	if m.HasWitness() {
 		h.Skip(2)
 	}
 	//+ins outs
-	m.bbpos = h.Pos()
+	bbpos = h.Pos()
 	il, _ := h.ReadVarInt()
 	m.Ins = make([]*TxIn, il)
 	for i, _ := range m.Ins {
@@ -463,22 +416,22 @@ func (m *TX) Read(h *NetHeader) {
 		v.Read(h)
 		m.Outs[i] = v
 	}
-	m.bepos = h.Pos()
-	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+	bepos = h.Pos()
+	buf.Write(h.SubBytes(bbpos, bepos))
 	//if has witnesses
 	if m.HasWitness() {
 		m.ReadWitnesses(h)
 	}
 	//lock time
-	m.bbpos = h.Pos()
+	bbpos = h.Pos()
 	m.LockTime = h.ReadUInt32()
-	m.repos = h.Pos()
-	m.bepos = h.Pos()
-	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+	bepos = h.Pos()
+	buf.Write(h.SubBytes(bbpos, bepos))
 	//hash get tx id
-	m.Body = buf.Bytes()
-	HASH256To(m.Body, &m.Hash)
-	m.Raw = h.SubBytes(m.rbpos, m.repos)
+	m.Base = buf.Len()
+	HASH256To(buf.Bytes(), &m.Hash)
+	repos := h.Pos()
+	m.Size = repos - rbpos
 }
 
 func (m *TX) HasWitness() bool {
@@ -486,12 +439,9 @@ func (m *TX) HasWitness() bool {
 }
 
 func (m *TX) WriteWitnesses(h *NetHeader) {
-	m.wbpos = h.Pos()
 	for _, v := range m.Ins {
 		v.Witness.Write(h)
 	}
-	m.wepos = h.Pos()
-	m.Witness = h.SubBytes(m.wbpos, m.wepos)
 }
 
 func (m *TX) SetHasWitness(v bool) {
@@ -503,17 +453,18 @@ func (m *TX) SetHasWitness(v bool) {
 }
 
 func (m *TX) Write(h *NetHeader) {
+	rbpos := h.Pos()
 	buf := bytes.Buffer{}
-	m.bbpos = h.Pos()
+	bbpos := h.Pos()
 	h.WriteUInt32(uint32(m.Ver))
-	m.bepos = h.Pos()
-	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+	bepos := h.Pos()
+	buf.Write(h.SubBytes(bbpos, bepos))
 
 	if m.HasWitness() {
 		h.WriteBytes(m.Flag)
 	}
 
-	m.bbpos = h.Pos()
+	bbpos = h.Pos()
 	h.WriteVarInt(len(m.Ins))
 	for _, v := range m.Ins {
 		v.Write(h)
@@ -522,19 +473,20 @@ func (m *TX) Write(h *NetHeader) {
 	for _, v := range m.Outs {
 		v.Write(h)
 	}
-	m.bepos = h.Pos()
-	buf.Write(h.SubBytes(m.bbpos, m.bepos))
+	bepos = h.Pos()
+	buf.Write(h.SubBytes(bbpos, bepos))
 
 	if m.HasWitness() {
 		m.WriteWitnesses(h)
 	}
-	m.bbpos = h.Pos()
+	bbpos = h.Pos()
 	h.WriteUInt32(m.LockTime)
-	m.bepos = h.Pos()
-	buf.Write(h.SubBytes(m.bbpos, m.bepos))
-
-	m.Body = buf.Bytes()
-	HASH256To(m.Body, &m.Hash)
+	bepos = h.Pos()
+	buf.Write(h.SubBytes(bbpos, bepos))
+	m.Base = buf.Len()
+	HASH256To(buf.Bytes(), &m.Hash)
+	repos := h.Pos()
+	m.Size = repos - rbpos
 }
 
 //
@@ -654,9 +606,9 @@ type MsgBlock struct {
 	Bits      uint32
 	Nonce     uint32
 	Txs       []*TX
-	Body      []byte //raw data
 	Height    uint32
 	Count     int
+	Size      int
 }
 
 func (b *MsgBlock) IsGenesis() bool {
@@ -665,57 +617,121 @@ func (b *MsgBlock) IsGenesis() bool {
 	return bytes.Equal(ZeroHashID[:], b.Prev[:]) && bytes.Equal(gid[:], b.Hash[:])
 }
 
-//
-//func (m *MsgBlock) GetAncestor(h int, db store.DbImp) (*BlockHeader, error) {
-//	bh := &BlockHeader{}
-//	err := db.GetBK(store.BKHeight(uint32(h)), bh)
-//	return bh, err
-//}
-//
-////get prev bits
-//func (m *MsgBlock) prevBits(lb *BlockHeader, db store.DbImp) uint32 {
-//	conf := config.GetConfig()
-//	hfv := int(lb.Height) - conf.DiffAdjusInterval() + 1
-//	if hfv < 0 {
-//		log.Panicf("first height %d error", hfv)
-//	}
-//	bh, err := m.GetAncestor(hfv, db)
-//	if err != nil {
-//		log.Panicf("get block for height %d error", hfv)
-//	}
-//	return CalculateWorkRequired(lb.Timestamp, bh.Timestamp, lb.Bits)
-//}
-//
-////check proof of work return height
-//func (m *MsgBlock) checkBits(lb *BlockHeader, db store.DbImp) (int, error) {
-//	conf := config.GetConfig()
-//	if !CheckProofOfWork(m.Hash, m.Bits) {
-//		return 0, errors.New("block proof of work check error")
-//	}
-//	height := 0
-//	if lb != nil {
-//		dav := conf.DiffAdjusInterval()
-//		bits := uint32(0)
-//		if (int(lb.Height)+1)%dav != 0 {
-//			bits = lb.Bits
-//		} else {
-//			bits = m.prevBits(lb, db)
-//		}
-//		if m.Bits != bits {
-//			return 0, errors.New("block bits error")
-//		}
-//		height = int(lb.Height + 1)
-//	} else if !m.IsGenesis() {
-//		return 0, errors.New("last block get error")
-//	}
-//	return height, nil
-//}
-
-func IsScriptWitnessEnabled(conf *config.Config) bool {
-	return conf.SegwitHeight != script.INT_MAX
+//sb = save best
+func (m *MsgBlock) Connect(sb bool) error {
+	batch := &leveldb.Batch{}
+	//save block data
+	bkey := NewTBlockKey(m.Hash)
+	batch.Put(bkey[:], NewTBlock(m))
+	//save height index
+	hkey := NewTHeightKey(m.Height)
+	batch.Put(hkey[:], m.Hash[:])
+	//save tx index,addr index
+	for idx, tx := range m.Txs {
+		//txid  -> block txs[idx]
+		//coinbase txid,There may be the same
+		if !tx.IsCoinBase() && HasTx(tx.Hash) {
+			return fmt.Errorf("block tx exists txid=%v", tx.Hash)
+		}
+		txkey := NewTxKey(tx.Hash)
+		batch.Put(txkey[:], NewTTxValue(m.Hash, uint32(idx)))
+		//cost value
+		for iidx, in := range tx.Ins {
+			if iidx == 0 && tx.IsCoinBase() {
+				continue
+			}
+			outtx, err := LoadTx(in.OutHash)
+			if err != nil {
+				return fmt.Errorf("load outtx failed: %w, tx=%v[%d] miss", err, in.OutHash, in.OutIndex)
+			}
+			if int(in.OutIndex) >= len(outtx.Outs) {
+				return fmt.Errorf("outindex outbound outs block=%v tx=%v", m.Hash, tx.Hash)
+			}
+			outv := outtx.Outs[in.OutIndex]
+			if outv.Script == nil {
+				return fmt.Errorf("out script nil,error")
+			}
+			if outv.Value == 0 {
+				continue
+			}
+			addr := outv.Script.GetAddress()
+			if addr == "" {
+				log.Println("warn, address parse failed 1")
+				continue
+			}
+			//cost addr
+			akey := NewTAddrKey(addr, in.OutHash, in.OutIndex)
+			batch.Delete(akey)
+		}
+		//get value
+		for oidx, out := range tx.Outs {
+			if out.Value == 0 {
+				continue
+			}
+			if out.Script == nil {
+				return fmt.Errorf("out script nil,error")
+			}
+			addr := out.Script.GetAddress()
+			if addr == "" {
+				log.Println("warn, address parse failed 2")
+				continue
+			}
+			akey := NewTAddrKey(addr, tx.Hash, uint32(oidx))
+			aval := NewTAddrValue(out.Value)
+			batch.Put(akey, aval[:])
+		}
+	}
+	//update best block
+	if sb {
+		batch.Put([]byte(TBestBlockHashKey), m.Hash[:])
+	}
+	return DB().Write(batch, nil)
 }
 
-func (m *MsgBlock) GetScriptFlags(height int) int {
+//
+////get prev bits
+func (m *MsgBlock) prevBits() uint32 {
+	conf := config.GetConfig()
+	lb := G.LastBlock()
+	hfv := int(lb.Height) - conf.DiffAdjusInterval() + 1
+	if hfv < 0 {
+		log.Panicf("first height %d error", hfv)
+	}
+	bh, err := LoadHeightBlock(uint32(hfv))
+	if err != nil {
+		log.Panicf("get block for height %d error", hfv)
+	}
+	return CalculateWorkRequired(lb.Timestamp, bh.Timestamp, lb.Bits)
+}
+
+//
+////check proof of work return height
+func (m *MsgBlock) checkBits() error {
+	conf := config.GetConfig()
+	if !CheckProofOfWork(m.Hash, m.Bits) {
+		return errors.New("block proof of work check error")
+	}
+	dav := conf.DiffAdjusInterval()
+	bits := uint32(0)
+	if m.IsGenesis() {
+		limit := NewUIHash(conf.PowLimit)
+		bits = limit.Compact(false)
+	} else if int(m.Height)%dav != 0 {
+		bits = G.LastBlock().Bits
+	} else {
+		bits = m.prevBits()
+	}
+	if m.Bits != bits {
+		return fmt.Errorf("block bits error %x - %x", m.Bits, bits)
+	}
+	return nil
+}
+
+func IsScriptWitnessEnabled(conf *config.Config) bool {
+	return int(conf.SegwitHeight) != script.INT_MAX
+}
+
+func (m *MsgBlock) GetScriptFlags() int {
 	flags := script.SCRIPT_VERIFY_NONE
 	conf := config.GetConfig()
 	if conf.BIP16Exception == "" || m.Hash.String() != conf.BIP16Exception {
@@ -724,88 +740,88 @@ func (m *MsgBlock) GetScriptFlags(height int) int {
 	if flags&script.SCRIPT_VERIFY_P2SH != 0 && IsScriptWitnessEnabled(conf) {
 		flags |= script.SCRIPT_VERIFY_WITNESS
 	}
-	if height >= conf.BIP66Height {
+	if m.Height >= conf.BIP66Height {
 		flags |= script.SCRIPT_VERIFY_DERSIG
 	}
-	if height >= conf.BIP65Height {
+	if m.Height >= conf.BIP65Height {
 		flags |= script.SCRIPT_VERIFY_CHECKLOCKTIMEVERIFY
 	}
-	if height >= conf.CSVHeight {
+	if m.Height >= conf.CSVHeight {
 		flags |= script.SCRIPT_VERIFY_CHECKSEQUENCEVERIFY
 	}
-	if height >= conf.SegwitHeight {
+	if m.Height >= conf.SegwitHeight {
 		flags |= script.SCRIPT_VERIFY_NULLDUMMY
 	}
 	return flags
 }
 
-////check recv block
-//func (m *MsgBlock) CheckBlock(lb *BlockHeader, db store.DbImp) error {
-//	txids := []HashID{}
-//	if len(m.Txs) == 0 {
-//		return errors.New("miss tx data")
-//	}
-//	height, err := m.checkBits(lb, db)
-//	if err != nil {
-//		return err
-//	}
-//	bfee, vfee, cfee := Amount(0), GetCoinbaseReward(height), Amount(0)
-//	if !vfee.IsRange() {
-//		return errors.New("get coinbase reward error")
-//	}
-//	flags := m.GetScriptFlags(height)
-//
-//	for i, v := range m.Txs {
-//		if i == 0 && !v.IsCoinBase() {
-//			return errors.New("0 tx not coinbase")
-//		}
-//		//coinbase txid,There may be the same
-//		//if !v.IsCoinBase() && db.HasTX(v.Hash[:]) {
-//		//	return fmt.Errorf("block tx exists txid=%v", v.Hash)
-//		//}
-//		if err := VerifyTX(v, db, flags); err != nil {
-//			return fmt.Errorf("verify tx error %v", err)
-//		}
-//		txids = append(txids, v.Hash)
-//		av, err := v.GetFee(db)
-//		if err != nil {
-//			return fmt.Errorf("check tx amount error %v", err)
-//		}
-//		if v.IsCoinBase() {
-//			cfee = av
-//		} else {
-//			bfee += av
-//		}
-//	}
-//	if !cfee.IsRange() || !bfee.IsRange() {
-//		return errors.New("check block fee error")
-//	}
-//	if (cfee - bfee) > vfee {
-//		return errors.New("block amount error")
-//	}
-//	root, _, _ := BuildMerkleTree(txids).Extract()
-//	if root.IsZero() {
-//		return errors.New("merkle tree root error")
-//	}
-//	if !root.Equal(m.Merkle) {
-//		return errors.New("Calc merkle id error")
-//	}
-//	return nil
-//}
+//check recv block
+func (m *MsgBlock) Check() error {
+	txids := []HashID{}
+	if len(m.Txs) == 0 {
+		return errors.New("miss tx data")
+	}
+	if err := m.checkBits(); err != nil {
+		return err
+	}
+	bfee, vfee, cfee := Amount(0), GetCoinbaseReward(int(m.Height)), Amount(0)
+	if !vfee.IsRange() {
+		return errors.New("get coinbase reward error")
+	}
+	flags := m.GetScriptFlags()
+	for i, v := range m.Txs {
+		if i == 0 && !v.IsCoinBase() {
+			return errors.New("0 tx not coinbase")
+		}
+		//coinbase txid,There may be the same
+		if !v.IsCoinBase() && HasTx(v.Hash) {
+			return fmt.Errorf("block tx exists txid=%v", v.Hash)
+		}
+		if err := VerifyTX(v, flags); err != nil {
+			return fmt.Errorf("verify tx error %v", err)
+		}
+		txids = append(txids, v.Hash)
+		av, err := v.GetFee()
+		if err != nil {
+			return fmt.Errorf("check tx amount error %v", err)
+		}
+		if v.IsCoinBase() {
+			cfee = av
+		} else {
+			bfee += av
+		}
+		TxCacheSet(v.Hash, v)
+	}
+	if !cfee.IsRange() || !bfee.IsRange() {
+		return errors.New("check block fee error")
+	}
+	if (cfee - bfee) > vfee {
+		return errors.New("block amount error")
+	}
+	root, _, _ := BuildMerkleTree(txids).Extract()
+	if root.IsZero() {
+		return errors.New("merkle tree root error")
+	}
+	if !root.Equal(m.Merkle) {
+		return errors.New("Calc merkle id error")
+	}
+	return nil
+}
 
 func (m *MsgBlock) Command() string {
 	return NMT_BLOCK
 }
 
 func (m *MsgBlock) Read(h *NetHeader) {
-	hs := h.Pos()
+	hs, bb := h.Pos(), h.Pos()
 	m.Ver = h.ReadUInt32()
 	h.ReadBytes(m.Prev[:])
 	h.ReadBytes(m.Merkle[:])
 	m.Timestamp = h.ReadUInt32()
 	m.Bits = h.ReadUInt32()
 	m.Nonce = h.ReadUInt32()
-	HASH256To(h.Payload[hs:h.Pos()], &m.Hash)
+	he := h.Pos()
+	HASH256To(h.Payload[hs:he], &m.Hash)
 	l, _ := h.ReadVarInt()
 	m.Txs = make([]*TX, l)
 	for i, _ := range m.Txs {
@@ -813,25 +829,28 @@ func (m *MsgBlock) Read(h *NetHeader) {
 		v.Read(h)
 		m.Txs[i] = v
 	}
-	m.Body = h.Payload
 	m.Count = len(m.Txs)
+	be := h.Pos()
+	m.Size = be - bb
 }
 
 func (m *MsgBlock) Write(h *NetHeader) {
-	hp := h.Pos()
+	hs, bb := h.Pos(), h.Pos()
 	h.WriteUInt32(m.Ver)
 	h.WriteBytes(m.Prev[:])
 	h.WriteBytes(m.Merkle[:])
 	h.WriteUInt32(m.Timestamp)
 	h.WriteUInt32(m.Bits)
 	h.WriteUInt32(m.Nonce)
+	he := h.Pos()
+	HASH256To(h.SubBytes(hs, he), &m.Hash)
 	h.WriteVarInt(len(m.Txs))
-	HASH256To(h.Payload[hp:h.Pos()], &m.Hash)
 	for _, v := range m.Txs {
 		v.Write(h)
 	}
-	m.Body = h.Payload
 	m.Count = len(m.Txs)
+	be := h.Pos()
+	m.Size = be - bb
 }
 
 func (m *MsgBlock) BuildMarkleTree() *MerkleTree {

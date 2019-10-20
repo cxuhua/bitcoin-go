@@ -1,9 +1,18 @@
 package core
 
 import (
+	"bitcoin/config"
 	"testing"
 	"time"
 )
+
+func TestBaseBits(t *testing.T) {
+	conf := config.GetConfig()
+	limit := NewUIHash(conf.PowLimit)
+	if limit.Compact(false) != 0x1d00ffff {
+		t.Errorf("base bits error")
+	}
+}
 
 //201600 bits compute
 //lastBlock = 2016599

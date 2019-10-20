@@ -2,45 +2,67 @@ package main
 
 import (
 	"bitcoin/core"
+	"io/ioutil"
 	"log"
 	"testing"
 )
 
-func TestLoadKey(t *testing.T) {
-	defer core.DB().Close()
-
-	last, err := core.LoadBestBlock()
+func TestError(t *testing.T) {
+	db := core.DB()
+	defer db.Close()
+	if err := core.G.Init(); err != nil {
+		panic(err)
+	}
+	data, err := ioutil.ReadFile("f:\\blocks\\000000002732d387256b57cabdcb17767e3d30e220ea73f844b1907c0b5919ea")
 	if err != nil {
 		panic(err)
 	}
-	log.Println("last block", last.Height, last.Hash)
-
-	m, err := core.LoadBlock(core.NewHashID("00000000fb11ef25014e02b315285a22f80c8f97689d7e36d723317defaabe5b"))
-	if err != nil {
-		panic(err)
-	}
-	log.Println(m.Height == 104)
-
-	iter := core.DB().NewIterator(nil, nil)
-	for iter.Next() {
-		key := iter.Key()
-		if key[0] == core.TPrefixBlock {
-			vk := core.TBlock(iter.Value())
-			bk := core.TBlockKey{}
-			copy(bk[:], key)
-			log.Println(bk, vk.Height())
-		} else if key[0] == core.TPrefixTxId {
-			tk := core.TTxKey{}
-			copy(tk[:], key)
-			log.Println(tk)
-		} else if key[0] == core.TPrefixAddress {
-			v := core.TAddrValue{}
-			copy(v[:], iter.Value())
-			log.Println(core.TAddrKey(key), v)
-		}
-	}
+	h := core.NewNetHeader(data)
+	m := &core.MsgBlock{}
+	m.Read(h)
+	m.Height = core.G.LastHeight() + 1
+	err = m.Check()
+	log.Println(err)
 }
 
+func TestLoadKey(t *testing.T) {
+	db := core.DB()
+	defer db.Close()
+	if err := core.G.Init(); err != nil {
+		panic(err)
+	}
+	eles := core.ListAddrValues("127YYnp1jvgAX3vCB22WUUsuyTYfAeSQHh")
+	for _, ele := range eles {
+		log.Println(ele.TAddrKey, ele.GetValue())
+	}
+	//b, err := core.LoadHeightBlock(20)
+	//if err != nil {
+	//	panic(err)
+	//}
+	//if b.Height != 20 {
+	//	t.Errorf("load error")
+	//}
+	//iter := core.DB().NewIterator(nil, nil)
+	//for iter.Next() {
+	//	key := iter.Key()
+	//	if key[0] == core.TPrefixBlock {
+	//		vk := core.TBlock(iter.Value())
+	//		bk := core.TBlockKey{}
+	//		copy(bk[:], key)
+	//		log.Println(bk, vk.Height())
+	//	} else if key[0] == core.TPrefixTxId {
+	//		tk := core.TTxKey{}
+	//		copy(tk[:], key)
+	//		log.Println(tk)
+	//	} else if key[0] == core.TPrefixAddress {
+	//		v := core.TAddrValue{}
+	//		copy(v[:], iter.Value())
+	//		log.Println(core.TAddrKey(key), v)
+	//	} else if key[0] == core.TPrefixHeight {
+	//		log.Println(core.NewHashID(iter.Value()))
+	//	}
+	//}
+}
 func TestRunClient(t *testing.T) {
 	c := core.NewClient(core.ClientTypeOut, "192.168.31.198:8333")
 	c.Sync(&core.ClientListener{
@@ -67,4 +89,8 @@ func TestRunClient(t *testing.T) {
 			}
 		},
 	})
+}
+
+func TestLoadBlocks(t *testing.T) {
+
 }

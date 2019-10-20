@@ -29,12 +29,12 @@ type Config struct {
 	LocalAddr string //ip:port
 	//
 	BIP16Exception string
-	BIP34Height    int
+	BIP34Height    uint32
 	BIP34Hash      string
-	BIP65Height    int
-	BIP66Height    int
-	CSVHeight      int
-	SegwitHeight   int
+	BIP65Height    uint32
+	BIP66Height    uint32
+	CSVHeight      uint32
+	SegwitHeight   uint32
 
 	b58prefixs map[int][]byte
 	//210000

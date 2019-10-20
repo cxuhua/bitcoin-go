@@ -9,7 +9,24 @@ import (
 	"syscall"
 )
 
+//000000000000000009a0f8ed656d8bc40fef69ec5a366d0eb70945e893882daa 317867
+func write() {
+	//init db
+	db := core.DB()
+	defer db.Close()
+	if err := core.G.Init(); err != nil {
+		panic(err)
+	}
+	//
+	chian := core.GetChain("0000000000000a3290f20e75860d505ce0e948a1d1d846bec7e39015d242884b", 150000)
+	if err := chian.WriteDB("f:\\blocks", int(core.G.LastHeight())); err != nil {
+		log.Println(err)
+	}
+}
+
 func main() {
+	write()
+	return
 	csig := make(chan os.Signal)
 	//
 	ctx, cancel := context.WithCancel(context.Background())
