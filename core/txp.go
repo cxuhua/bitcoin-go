@@ -790,7 +790,7 @@ func (m *MsgBlock) Check() error {
 		} else {
 			bfee += av
 		}
-		TxCacheSet(v.Hash, v)
+		Txs.Set(v.Hash, v)
 	}
 	if !cfee.IsRange() || !bfee.IsRange() {
 		return errors.New("check block fee error")

@@ -4,6 +4,7 @@ import (
 	"bitcoin/script"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 )
 
@@ -64,7 +65,7 @@ func (m *MsgBuffer) IsEOF() bool {
 
 func (m *MsgBuffer) Read(p []byte) (n int, err error) {
 	if m.rwpos+len(p) > len(m.Payload) {
-		return 0, io.EOF
+		panic(fmt.Errorf("msg buffer read error %w", io.EOF))
 	}
 	if len(p) == 0 {
 		return 0, nil
@@ -94,14 +95,14 @@ func (m *MsgBuffer) Write(p []byte) (n int, err error) {
 
 func (b *MsgBuffer) Skip(l int) {
 	if b.rwpos+l > len(b.Payload) {
-		panic(io.EOF)
+		panic(fmt.Errorf("msg buffer skip error %w", io.EOF))
 	}
 	b.rwpos += l
 }
 
 func (b *MsgBuffer) Peek(l int) []byte {
 	if b.rwpos+l > len(b.Payload) {
-		panic(io.EOF)
+		panic(fmt.Errorf("msg buffer peek error %w", io.EOF))
 	}
 	return b.Payload[b.rwpos : b.rwpos+l]
 }

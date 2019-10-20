@@ -204,9 +204,10 @@ func (a TAddrValue) String() string {
 	return fmt.Sprintf("%d", a.GetValue())
 }
 
+//prefix[1] hash[32]
 type TBlockKey [33]byte
 
-//prefix + txid
+//prefix[1] + txid[32]
 type TTxKey [33]byte
 
 //BlockHash[32] + txindex[4]
@@ -274,8 +275,10 @@ func LoadBestBlock() (*MsgBlock, error) {
 }
 
 func LoadBlock(id HashID) (*MsgBlock, error) {
-	if bv, err := BlockCacheGet(id); err == nil {
+	if bv, err := Bxs.Get(id); err == nil {
 		return bv, nil
+	} else if Bxs.Only() {
+		return nil, err
 	}
 	key := NewTBlockKey(id)
 	bb, err := DB().Get(key[:], nil)
@@ -285,7 +288,7 @@ func LoadBlock(id HashID) (*MsgBlock, error) {
 	bv := TBlock(bb)
 	m := bv.ToBlock()
 	m.Height = bv.Height()
-	return BlockCacheSet(id, m)
+	return Bxs.Set(id, m)
 }
 
 func (v TTxValue) TxIndex() uint32 {
@@ -308,8 +311,10 @@ func (v TTxValue) GetTx() (*TX, error) {
 
 func LoadTx(tx HashID) (*TX, error) {
 	//cache
-	if tv, err := TxCacheGet(tx); err == nil {
+	if tv, err := Txs.Get(tx); err == nil {
 		return tv, nil
+	} else if Txs.Only() {
+		return nil, err
 	}
 	v, err := LoadTxValue(tx)
 	if err != nil {
@@ -319,7 +324,7 @@ func LoadTx(tx HashID) (*TX, error) {
 	if err != nil {
 		return nil, err
 	}
-	return TxCacheSet(tx, tv)
+	return Txs.Set(tx, tv)
 }
 
 func LoadTxValue(tx HashID) (TTxValue, error) {
