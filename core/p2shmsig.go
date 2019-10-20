@@ -13,7 +13,7 @@ type p2shMSIGVerify struct {
 	baseVerify
 }
 
-func newP2SHMSIGVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2shMSIGVerify {
+func newP2SHMSIGVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TxType) *p2shMSIGVerify {
 	return &p2shMSIGVerify{
 		sigs:     []*script.Script{},
 		pkscript: nil,

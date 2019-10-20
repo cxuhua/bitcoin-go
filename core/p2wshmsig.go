@@ -13,7 +13,7 @@ type p2wshMSIGVerify struct {
 	baseVerify
 }
 
-func newP2WSHMSIGVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2wshMSIGVerify {
+func newP2WSHMSIGVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TxType) *p2wshMSIGVerify {
 	return &p2wshMSIGVerify{
 		hsidx: -1,
 		baseVerify: baseVerify{

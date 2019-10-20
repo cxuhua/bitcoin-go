@@ -24,7 +24,7 @@ type baseVerify struct {
 	in  *TxIn  //current in
 	out *TxOut //in's out
 	ctx *TX    //currenct tx'clone
-	typ TXType //tx type
+	typ TxType //tx type
 }
 
 func (vfy *baseVerify) CheckLockTime(ltime script.ScriptNum) error {
@@ -62,11 +62,11 @@ func (vfy *baseVerify) CheckSequence(seq script.ScriptNum) error {
 	return nil
 }
 
-type TXType int
+type TxType int
 
 //tx type
 const (
-	TX_UNKNOW TXType = iota
+	TX_UNKNOW TxType = iota
 	TX_P2PK
 	TX_P2PKH
 	TX_P2SH_WPKH
@@ -100,7 +100,7 @@ func (i *TxIn) HasScriptMultiSig() bool {
 }
 
 //in input data,out=in's out
-func CheckTXType(in *TxIn, out *TxOut) TXType {
+func CheckTXType(in *TxIn, out *TxOut) TxType {
 	if in == nil || out == nil || out.Script == nil {
 		return TX_UNKNOW
 	}

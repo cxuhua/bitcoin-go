@@ -11,7 +11,7 @@ type p2shwpkhVerify struct {
 	baseVerify
 }
 
-func newP2SHWPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2shwpkhVerify {
+func newP2SHWPKHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TxType) *p2shwpkhVerify {
 	return &p2shwpkhVerify{
 		baseVerify: baseVerify{
 			idx: idx,
