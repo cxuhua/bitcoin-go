@@ -3,7 +3,6 @@ package core
 import (
 	"errors"
 	"github.com/patrickmn/go-cache"
-	"sync"
 	"time"
 )
 
@@ -11,31 +10,19 @@ type TxCacher interface {
 	Del(id HashID)
 	Get(id HashID) (*TX, error)
 	Set(id HashID, tx *TX) (*TX, error)
-	Only() bool //only read from cacher return true
-	Push(n TxCacher)
-	SetTop(n TxCacher)
-	Pop()
 }
 
 type BlockCacher interface {
 	Del(id HashID)
 	Get(id HashID) (*MsgBlock, error)
 	Set(id HashID, bl *MsgBlock) (*MsgBlock, error)
-	Only() bool //only read from cacher return true
-	Push(n BlockCacher)
-	SetTop(n BlockCacher)
-	Pop()
 }
 
 var (
 	//tx cacher
-	Txs TxCacher = &txcacherdb{
-		txstackcacher: &txstackcacher{},
-	}
+	Txs TxCacher = &txcacherdb{}
 	//block cacher
-	Bxs BlockCacher = &blockcacherdb{
-		blockstackcacher: &blockstackcacher{},
-	}
+	Bxs BlockCacher = &blockcacherdb{}
 )
 
 var (
@@ -46,35 +33,7 @@ var (
 	bxs = cache.New(time.Minute*5, time.Minute*20)
 )
 
-type txstackcacher struct {
-	mu   sync.Mutex
-	curr TxCacher
-}
-
-func (db *txstackcacher) Push(n TxCacher) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	if db.curr == nil {
-		db.curr = Txs
-	}
-	n.SetTop(db.curr)
-	Txs = n
-}
-
-func (db *txstackcacher) SetTop(curr TxCacher) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	db.curr = curr
-}
-
-func (db *txstackcacher) Pop() {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	Txs = db.curr
-}
-
 type txcacherdb struct {
-	*txstackcacher
 }
 
 func (db *txcacherdb) Only() bool {
@@ -98,35 +57,7 @@ func (db *txcacherdb) Get(id HashID) (*TX, error) {
 	return v.(*TX), nil
 }
 
-type blockstackcacher struct {
-	mu   sync.Mutex
-	curr BlockCacher
-}
-
-func (db *blockstackcacher) Push(n BlockCacher) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	if db.curr == nil {
-		db.curr = Bxs
-	}
-	n.SetTop(db.curr)
-	Bxs = n
-}
-
-func (db *blockstackcacher) SetTop(curr BlockCacher) {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	db.curr = curr
-}
-
-func (db *blockstackcacher) Pop() {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	Bxs = db.curr
-}
-
 type blockcacherdb struct {
-	*blockstackcacher
 }
 
 func (db *blockcacherdb) Only() bool {

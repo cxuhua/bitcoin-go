@@ -5,12 +5,13 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"github.com/syndtr/goleveldb/leveldb/filter"
-	"github.com/syndtr/goleveldb/leveldb/opt"
-	"github.com/syndtr/goleveldb/leveldb/util"
 	"io/ioutil"
 	"log"
 	"sync"
+
+	"github.com/syndtr/goleveldb/leveldb/filter"
+	"github.com/syndtr/goleveldb/leveldb/opt"
+	"github.com/syndtr/goleveldb/leveldb/util"
 
 	"github.com/syndtr/goleveldb/leveldb"
 )
@@ -277,8 +278,6 @@ func LoadBestBlock() (*MsgBlock, error) {
 func LoadBlock(id HashID) (*MsgBlock, error) {
 	if bv, err := Bxs.Get(id); err == nil {
 		return bv, nil
-	} else if Bxs.Only() {
-		return nil, err
 	}
 	key := NewTBlockKey(id)
 	bb, err := DB().Get(key[:], nil)
@@ -313,8 +312,6 @@ func LoadTx(tx HashID) (*TX, error) {
 	//cache
 	if tv, err := Txs.Get(tx); err == nil {
 		return tv, nil
-	} else if Txs.Only() {
-		return nil, err
 	}
 	v, err := LoadTxValue(tx)
 	if err != nil {
