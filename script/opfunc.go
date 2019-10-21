@@ -74,6 +74,10 @@ func IsLowDERSignature(sig []byte) error {
 	return err
 }
 
+func IsSmallInteger(op byte) bool {
+	return op >= OP_1 && op <= OP_16
+}
+
 func IsValidSignatureEncoding(sig []byte) bool {
 	if len(sig) < 9 {
 		return false
@@ -204,6 +208,10 @@ func (v ScriptNum) Serialize() []byte {
 	return ret
 }
 
+func (s Script) IsUnspendable() bool {
+	return (s.Len() > 0 && s[0] == OP_RETURN) || s.Len() > MAX_SCRIPT_SIZE
+}
+
 func (s Script) HasValidOps() bool {
 	for i := 0; i < s.Len(); {
 		b, p, op, ops := s.GetOp(i)
@@ -327,6 +335,7 @@ func (s Script) IsP2PKH(v ...*[]byte) bool {
 	return b
 }
 
+//IsPayToScriptHash TX_SCRIPTHASH
 func (s Script) IsP2SH(v ...*[]byte) bool {
 	b := s.Len() == 23 && s[0] == OP_HASH160 && s[1] == 0x14 && s[22] == OP_EQUAL
 	if b {
@@ -356,6 +365,19 @@ func (s Script) IsP2WSH(v ...*[]byte) bool {
 	return b
 }
 
+func (s Script) IsWitnessProgram() bool {
+	if s.Len() < 4 || s.Len() > 42 {
+		return false
+	}
+	if s[0] != OP_0 && (s[0] < OP_1 || s[0] > OP_16) {
+		return false
+	}
+	if int(s[1]+2) == s.Len() {
+		return true
+	}
+	return false
+}
+
 //return lessnum,pubnum
 func (s Script) HasMultiSig() bool {
 	if s.Len() == 0 || s[s.Len()-1] != OP_CHECKMULTISIG {
@@ -383,7 +405,7 @@ func (s Script) HasMultiSig() bool {
 	if knum != pnum || lnum > pnum {
 		return false
 	}
-	return lnum > 0 && pnum >= 3 && lnum <= pnum
+	return lnum > 0 && pnum >= 1 && lnum <= pnum
 }
 
 func (s *Script) PushInt64(v int64) *Script {
@@ -460,9 +482,8 @@ func (s *Script) GetOp(b int) (bool, int, byte, []byte) {
 		if e-b < 1 {
 			return false, b, op, ret
 		}
-		op = (*s)[b]
+		size = uint((*s)[b])
 		b++
-		size = uint(op)
 	} else if op == OP_PUSHDATA2 {
 		if e-b < 2 {
 			return false, b, op, ret

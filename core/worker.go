@@ -85,7 +85,10 @@ func processBlock(wid int, c *Client, m *MsgBlock) error {
 	if !G.IsNextBlock(m) {
 		return fmt.Errorf("can't link prev block,ignore block %v", m.Hash)
 	}
-	if err := m.Connect(true); err != nil {
+	if err := m.Check(); err != nil {
+		return fmt.Errorf("check block error %w", err)
+	}
+	if err := m.Save(true); err != nil {
 		return fmt.Errorf("DB save block error %w", err)
 	}
 	Headers.Remove()

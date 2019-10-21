@@ -18,13 +18,15 @@ func write() {
 		panic(err)
 	}
 	//
-	chian := core.GetChain("000000000000000009a0f8ed656d8bc40fef69ec5a366d0eb70945e893882daa", 317867)
+	chian := core.GetChain("000000000000034a7dedef4a161fa058a2d67a173a90155f3a2fe6fc132e0ebf", 200000)
 	if err := chian.WriteDB("f:\\blocks", int(core.G.LastHeight())); err != nil {
 		log.Println(err)
 	}
 }
 
 func main() {
+	write()
+	return
 	csig := make(chan os.Signal)
 	//
 	ctx, cancel := context.WithCancel(context.Background())

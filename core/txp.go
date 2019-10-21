@@ -6,9 +6,10 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/syndtr/goleveldb/leveldb"
 	"log"
 	"math"
+
+	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/willf/bitset"
 )
@@ -618,7 +619,7 @@ func (b *MsgBlock) IsGenesis() bool {
 }
 
 //sb = save best
-func (m *MsgBlock) Connect(sb bool) error {
+func (m *MsgBlock) Save(sb bool) error {
 	batch := &leveldb.Batch{}
 	//save block data
 	bkey := NewTBlockKey(m.Hash)
@@ -769,6 +770,8 @@ func (m *MsgBlock) Check() error {
 		return errors.New("get coinbase reward error")
 	}
 	flags := m.GetScriptFlags()
+	Txs.Push()
+	defer Txs.Pop()
 	for i, v := range m.Txs {
 		if i == 0 && !v.IsCoinBase() {
 			return errors.New("0 tx not coinbase")
@@ -790,7 +793,7 @@ func (m *MsgBlock) Check() error {
 		} else {
 			bfee += av
 		}
-		Txs.Set(v.Hash, v)
+		Txs.Set(v)
 	}
 	if !cfee.IsRange() || !bfee.IsRange() {
 		return errors.New("check block fee error")
