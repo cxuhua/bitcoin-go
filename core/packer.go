@@ -22,7 +22,7 @@ type baseSigPacker struct {
 	out *TxOut //in's out
 	ctx *TX    //currenct tx'clone
 	ht  uint32 //hash type script.SIGHASH_*
-	typ TXType //tx type
+	typ TxType //tx type
 }
 
 func (sp *baseSigPacker) Pack(imp ISigScript) ([]byte, error) {
@@ -58,7 +58,7 @@ type witnesSigPacker struct {
 	out *TxOut //in's out
 	ctx *TX    //currenct tx'clone
 	ht  uint32 //hash type script.SIGHASH_*
-	typ TXType //tx type
+	typ TxType //tx type
 }
 
 func (sp *witnesSigPacker) getOutputsHash() HashID {

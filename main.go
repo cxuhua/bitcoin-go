@@ -25,8 +25,6 @@ func write() {
 }
 
 func main() {
-	write()
-	return
 	csig := make(chan os.Signal)
 	//
 	ctx, cancel := context.WithCancel(context.Background())

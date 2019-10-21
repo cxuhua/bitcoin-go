@@ -14,7 +14,7 @@ type p2shwshVerify struct {
 	baseVerify
 }
 
-func newP2SHWSHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TXType) *p2shwshVerify {
+func newP2SHWSHVerify(idx int, in *TxIn, out *TxOut, ctx *TX, typ TxType) *p2shwshVerify {
 	return &p2shwshVerify{
 		hsidx: -1,
 		less:  -1,
