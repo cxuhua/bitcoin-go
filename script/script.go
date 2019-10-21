@@ -4,7 +4,6 @@ import (
 	"bitcoin/util"
 	"bytes"
 	"encoding/hex"
-	"errors"
 	"fmt"
 )
 
@@ -186,10 +185,6 @@ const (
 	MAX_OPCODE = OP_NOP10
 )
 
-var (
-	OpCodeErr = errors.New("op code error")
-)
-
 //disable op
 func OpIsDisabled(op byte) bool {
 	return op == OP_CAT ||
@@ -271,14 +266,14 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 		return SCRIPT_ERR_STACK_SIZE
 	}
 	pc, pe := 0, s.Len()
-	vfExec := NewStack() //bool list
+	vfexec := NewStack() //bool list
 	blf := func(v Value) bool {
 		return v.ToBool() == false
 	}
 	alts := NewStack()
 	opc := 0
 	for pc < pe {
-		fexec := vfExec.Count(blf) == 0
+		fexec := vfexec.Count(blf) == 0
 		ok, idx, op, ops := s.GetOp(pc)
 		if !ok {
 			return SCRIPT_ERR_BAD_OPCODE
@@ -347,18 +342,18 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 					}
 					stack.Pop()
 				}
-				vfExec.Push(NewValueBool(fValue))
+				vfexec.Push(NewValueBool(fValue))
 			case OP_ELSE:
-				if vfExec.Empty() {
+				if vfexec.Empty() {
 					return SCRIPT_ERR_UNBALANCED_CONDITIONAL
 				}
-				e := vfExec.Back()
+				e := vfexec.Back()
 				e.Value = !e.Value.(bool)
 			case OP_ENDIF:
-				if vfExec.Empty() {
+				if vfexec.Empty() {
 					return SCRIPT_ERR_UNBALANCED_CONDITIONAL
 				}
-				vfExec.Pop()
+				vfexec.Pop()
 			case OP_VERIFY:
 				if stack.Len() < 1 {
 					return SCRIPT_ERR_INVALID_STACK_OPERATION
@@ -796,7 +791,7 @@ func (s Script) Eval(stack *Stack, checker SigChecker, flags int) error {
 			}
 		}
 	}
-	if !vfExec.Empty() {
+	if !vfexec.Empty() {
 		return SCRIPT_ERR_UNBALANCED_CONDITIONAL
 	}
 	return nil

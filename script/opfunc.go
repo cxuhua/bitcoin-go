@@ -460,9 +460,8 @@ func (s *Script) GetOp(b int) (bool, int, byte, []byte) {
 		if e-b < 1 {
 			return false, b, op, ret
 		}
-		op = (*s)[b]
+		size = uint((*s)[b])
 		b++
-		size = uint(op)
 	} else if op == OP_PUSHDATA2 {
 		if e-b < 2 {
 			return false, b, op, ret

@@ -78,16 +78,13 @@ func (c *Chain) WriteDB(path string, lh int) error {
 		if idx%100 == 0 {
 			log.Println("load block ", idx, m.Hash, m.Height, "OK")
 		}
+		Bxs.Set(m)
 	}
 	for i := lh + 1; i < len(c.Hash); i++ {
-		file := path + "\\" + c.Hash[i].String()
-		data, err := ioutil.ReadFile(file)
+		m, err := Bxs.Get(c.Hash[i])
 		if err != nil {
-			return err
+			return fmt.Errorf("%v miss", c.Hash[i])
 		}
-		h := NewNetHeader(data)
-		m := &MsgBlock{}
-		m.Read(h)
 		if !G.IsNextBlock(m) {
 			return errors.New("connect to next block error")
 		}
@@ -287,7 +284,7 @@ func LoadBlock(id HashID) (*MsgBlock, error) {
 	bv := TBlock(bb)
 	m := bv.ToBlock()
 	m.Height = bv.Height()
-	return Bxs.Set(id, m)
+	return Bxs.Set(m)
 }
 
 func (v TTxValue) TxIndex() uint32 {
@@ -321,7 +318,7 @@ func LoadTx(tx HashID) (*TX, error) {
 	if err != nil {
 		return nil, err
 	}
-	return Txs.Set(tx, tv)
+	return Txs.Set(tv)
 }
 
 func LoadTxValue(tx HashID) (TTxValue, error) {
@@ -334,6 +331,6 @@ func NewTBlock(m *MsgBlock) TBlock {
 	m.Write(h)
 	b := make(TBlock, 4+h.Len())
 	ByteOrder.PutUint32(b[:4], m.Height)
-	copy(b[4:], h.Payload)
+	copy(b[4:], h.Bytes())
 	return b
 }
