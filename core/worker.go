@@ -88,7 +88,7 @@ func processBlock(wid int, c *Client, m *MsgBlock) error {
 	if err := m.Check(); err != nil {
 		return fmt.Errorf("check block error %w", err)
 	}
-	if err := m.Connect(true); err != nil {
+	if err := m.Save(true); err != nil {
 		return fmt.Errorf("DB save block error %w", err)
 	}
 	Headers.Remove()

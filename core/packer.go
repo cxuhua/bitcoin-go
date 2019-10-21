@@ -2,7 +2,6 @@ package core
 
 import (
 	"bitcoin/script"
-	"fmt"
 )
 
 //get sig script interface
@@ -26,13 +25,16 @@ type baseSigPacker struct {
 }
 
 func (sp *baseSigPacker) Pack(imp ISigScript) ([]byte, error) {
-	if sp.ht != script.SIGHASH_ALL && sp.ht != 0 {
-		return nil, fmt.Errorf("hash type %d not support imp", sp.ht)
-	}
+	anyone := (sp.ht & script.SIGHASH_ANYONECANPAY) != 0
+	single := (sp.ht & 0x7F) == script.SIGHASH_SINGLE
+	none := (sp.ht & 0x7F) == script.SIGHASH_NONE
 	w := NewMsgWriter()
 	w.WriteInt32(sp.ctx.Ver)
 	w.WriteVarInt(len(sp.ctx.Ins))
 	for i, v := range sp.ctx.Ins {
+		if anyone {
+			i = sp.idx
+		}
 		w.WriteBytes(v.OutHash[:])
 		w.WriteUInt32(v.OutIndex)
 		if i == sp.idx {
@@ -40,10 +42,25 @@ func (sp *baseSigPacker) Pack(imp ISigScript) ([]byte, error) {
 		} else {
 			w.WriteScript(nil)
 		}
-		w.WriteUInt32(v.Sequence)
+		if i != sp.idx && (single || none) {
+			w.WriteUInt32(0)
+		} else {
+			w.WriteUInt32(v.Sequence)
+		}
 	}
-	w.WriteVarInt(len(sp.ctx.Outs))
-	for _, v := range sp.ctx.Outs {
+	outs := 0
+	if none {
+		outs = 0
+	} else if single {
+		outs = sp.idx + 1
+	} else {
+		outs = len(sp.ctx.Outs)
+	}
+	w.WriteVarInt(outs)
+	for i, v := range sp.ctx.Outs {
+		if i >= outs {
+			break
+		}
 		w.WriteUInt64(v.Value)
 		w.WriteScript(v.Script)
 	}
@@ -62,35 +79,55 @@ type witnesSigPacker struct {
 }
 
 func (sp *witnesSigPacker) getOutputsHash() HashID {
+	single := (sp.ht & 0x7F) == script.SIGHASH_SINGLE
+	none := (sp.ht & 0x7F) == script.SIGHASH_NONE
 	hash := HashID{}
-	m := NewMsgWriter()
-	for _, v := range sp.ctx.Outs {
-		m.WriteUInt64(v.Value)
-		m.WriteScript(v.Script)
+	if !single && !none {
+		m := NewMsgWriter()
+		for _, v := range sp.ctx.Outs {
+			m.WriteUInt64(v.Value)
+			m.WriteScript(v.Script)
+		}
+		return HASH256To(m.Bytes(), &hash)
+	} else if single && sp.idx < len(sp.ctx.Outs) {
+		ov := sp.ctx.Outs[sp.idx]
+		m := NewMsgWriter()
+		m.WriteUInt64(ov.Value)
+		m.WriteScript(ov.Script)
+		return HASH256To(m.Bytes(), &hash)
 	}
-	HASH256To(m.Payload, &hash)
 	return hash
 }
 
 func (sp *witnesSigPacker) getPrevoutHash() HashID {
+	anyone := (sp.ht & script.SIGHASH_ANYONECANPAY) != 0
 	hash := HashID{}
-	m := NewMsgWriter()
-	for _, v := range sp.ctx.Ins {
-		m.WriteBytes(v.OutHash[:])
-		m.WriteUInt32(v.OutIndex)
+	if !anyone {
+		m := NewMsgWriter()
+		for _, v := range sp.ctx.Ins {
+			m.WriteBytes(v.OutHash[:])
+			m.WriteUInt32(v.OutIndex)
+		}
+		return HASH256To(m.Bytes(), &hash)
+	} else {
+		return hash
 	}
-	HASH256To(m.Payload, &hash)
-	return hash
 }
 
 func (sp *witnesSigPacker) getSequenceHash() HashID {
+	anyone := (sp.ht & script.SIGHASH_ANYONECANPAY) != 0
+	single := (sp.ht & 0x7F) == script.SIGHASH_SINGLE
+	none := (sp.ht & 0x7F) == script.SIGHASH_NONE
 	hash := HashID{}
-	m := NewMsgWriter()
-	for _, v := range sp.ctx.Ins {
-		m.WriteUInt32(v.Sequence)
+	if !anyone && !single && !none {
+		m := NewMsgWriter()
+		for _, v := range sp.ctx.Ins {
+			m.WriteUInt32(v.Sequence)
+		}
+		return HASH256To(m.Bytes(), &hash)
+	} else {
+		return hash
 	}
-	HASH256To(m.Payload, &hash)
-	return hash
 }
 
 func (sp *witnesSigPacker) Pack(imp ISigScript) ([]byte, error) {

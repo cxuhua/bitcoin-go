@@ -36,6 +36,33 @@ func NewTestFileCacher() ICacher {
 	}
 }
 
+//out script:2a9bc5447d664c1d0141392a842d23dba45c4f13 OP_CHECKLOCKTIMEVERIFY OP_DROP
+func TestNonStandardSign(t *testing.T) {
+	Txs.Push(NewTestFileCacher())
+	defer Txs.Pop()
+	id := NewHashID("6d36bc17e947ce00bb6f12f8e7a56a1585c5a36188ffa2b05e10b4743273a74b")
+	tx2, err := LoadTx(id)
+	if err != nil {
+		t.Errorf("load tx error %v", err)
+	}
+	if err := VerifyTX(tx2, 0); err != nil {
+		t.Errorf("verify tx error %v", err)
+	}
+}
+
+func Test1of2Sign(t *testing.T) {
+	Txs.Push(NewTestFileCacher())
+	defer Txs.Pop()
+	id := NewHashID("1cc1ecdf5c05765df3d1f59fba24cd01c45464c329b0f0a25aa9883adfcf7f29")
+	tx2, err := LoadTx(id)
+	if err != nil {
+		t.Errorf("load tx error %v", err)
+	}
+	if err := VerifyTX(tx2, 0); err != nil {
+		t.Errorf("verify tx error %v", err)
+	}
+}
+
 //8d5bc6ff636d9cfb3a3b37cc2ad7681e5ba8078d8c7eb4a47531d75c18c8487f
 func TestP2WPKHSign(t *testing.T) {
 	Txs.Push(NewTestFileCacher())
@@ -52,6 +79,19 @@ func TestP2WPKHSign(t *testing.T) {
 	}
 	if err := VerifyTX(tx2, 0); err != nil {
 		t.Errorf("verify tx error %v", err)
+	}
+}
+
+func TestP2PKHSingleOne(t *testing.T) {
+	Txs.Push(NewTestFileCacher())
+	defer Txs.Pop()
+	id := NewHashID("599e47a8114fe098103663029548811d2651991b62397e057f0c863c2bc9f9ea")
+	tx2, err := LoadTx(id)
+	if err != nil {
+		panic(err)
+	}
+	if err := VerifyTX(tx2, 0); err != nil {
+		t.Errorf("Verify test failed  err=%v", err)
 	}
 }
 

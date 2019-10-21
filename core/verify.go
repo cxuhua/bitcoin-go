@@ -4,6 +4,8 @@ import (
 	"bitcoin/script"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"os"
 )
 
 var (
@@ -67,6 +69,8 @@ type TxType int
 //tx type
 const (
 	TX_UNKNOW TxType = iota
+	TX_NULL_DATA
+	TX_NONSTANDARD
 	TX_P2PK
 	TX_P2PKH
 	TX_P2SH_WPKH
@@ -113,6 +117,9 @@ func CheckTXType(in *TxIn, out *TxOut) TxType {
 	if out.Script.IsP2WPKH() && in.OnlyHasWitness() {
 		return TX_P2WPKH
 	}
+	if out.Script.IsNull() {
+		return TX_NULL_DATA
+	}
 	if out.Script.IsP2SH() && in.Script.IsP2WPKH() {
 		return TX_P2SH_WPKH
 	}
@@ -125,7 +132,7 @@ func CheckTXType(in *TxIn, out *TxOut) TxType {
 	if out.Script.IsP2SH() && in.HasScriptMultiSig() {
 		return TX_P2SH_MSIG
 	}
-	return TX_UNKNOW
+	return TX_NONSTANDARD
 }
 
 func VerifyTX(tx *TX, flags int) error {
@@ -145,10 +152,17 @@ func VerifyTX(tx *TX, flags int) error {
 		}
 		typ := CheckTXType(in, out)
 		if typ == TX_UNKNOW {
-			return fmt.Errorf("in %d checktype not support", idx)
+			return fmt.Errorf("in %d checktype not support tx=%v", idx, tx.Hash)
 		}
 		var verifyer Verifyer
 		switch typ {
+		case TX_NULL_DATA:
+			continue
+		case TX_NONSTANDARD:
+			h := NewNetHeader()
+			tx.Write(h)
+			ioutil.WriteFile(tx.Hash.String(), h.Bytes(), os.ModePerm)
+			continue
 		case TX_P2PKH, TX_P2PK:
 			verifyer = newP2PKHVerify(idx, in, out, tx, typ)
 		case TX_P2WPKH:

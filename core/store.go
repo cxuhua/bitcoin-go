@@ -11,6 +11,7 @@ import (
 
 	"github.com/syndtr/goleveldb/leveldb/filter"
 	"github.com/syndtr/goleveldb/leveldb/opt"
+
 	"github.com/syndtr/goleveldb/leveldb/util"
 
 	"github.com/syndtr/goleveldb/leveldb"
@@ -78,20 +79,25 @@ func (c *Chain) WriteDB(path string, lh int) error {
 		if idx%100 == 0 {
 			log.Println("load block ", idx, m.Hash, m.Height, "OK")
 		}
-		Bxs.Set(m)
+		//c.items[m.Hash] = m
 	}
 	for i := lh + 1; i < len(c.Hash); i++ {
-		m, err := Bxs.Get(c.Hash[i])
+		file := path + "\\" + c.Hash[i].String()
+		data, err := ioutil.ReadFile(file)
 		if err != nil {
-			return fmt.Errorf("%v miss", c.Hash[i])
+			return err
 		}
+		h := NewNetHeader(data)
+		m := &MsgBlock{}
+		m.Read(h)
+		m.Height = uint32(i)
 		if !G.IsNextBlock(m) {
 			return errors.New("connect to next block error")
 		}
 		if err := m.Check(); err != nil {
 			return err
 		}
-		if err := m.Connect(true); err != nil {
+		if err := m.Save(true); err != nil {
 			return err
 		}
 		G.SetBestBlock(m)
@@ -104,7 +110,7 @@ const (
 	//blocks key prefix
 	TPrefixBlock = byte(1)
 
-	//txid -> block key prefox
+	//txid -> block key prefix
 	TPrefixTxId = byte(2)
 
 	//address key prefix
@@ -112,6 +118,9 @@ const (
 
 	//height index(4) -> blockid
 	TPrefixHeight = byte(4)
+
+	//OutTxid[32]+OutIdx[4] -> block[32]-txidx[4]-inidx[4]
+	TPrefixOutTx = byte(5)
 
 	//Best block hash key -> blockid
 	TBestBlockHashKey = "TBestBlockHashKey"

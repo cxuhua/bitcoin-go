@@ -2,27 +2,38 @@ package main
 
 import (
 	"bitcoin/core"
+	"bitcoin/util"
+	"encoding/binary"
+	"encoding/hex"
 	"io/ioutil"
 	"log"
 	"testing"
 )
 
+func TestBB(t *testing.T) {
+	b4 := []byte{0x1d, 0x01, 0x00, 0x00}
+	log.Println(binary.LittleEndian.Uint32(b4))
+}
+
 func TestError(t *testing.T) {
-	db := core.DB()
-	defer db.Close()
-	if err := core.G.Init(); err != nil {
-		panic(err)
-	}
-	data, err := ioutil.ReadFile("f:\\blocks\\000000000000018f5ee13ecf9e9595356148c097a2fb5825169fde3f48e8eb8a")
+	//db := core.DB()
+	//defer db.Close()
+	//if err := core.G.Init(); err != nil {
+	//	panic(err)
+	//}
+	data, err := ioutil.ReadFile("f:\\blocks\\000000000019d6689c085ae165831e934ff763ae46a2a6c172b3f1b60a8ce26f")
 	if err != nil {
 		panic(err)
 	}
-	h := core.NewNetHeader(data)
-	m := &core.MsgBlock{}
-	m.Read(h)
-	m.Height = core.G.LastHeight() + 1
-	err = m.Check()
-	log.Println(err)
+
+	log.Println(hex.EncodeToString(util.HASH256(data)))
+
+	//h := core.NewNetHeader(data)
+	//m := &core.MsgBlock{}
+	//m.Read(h)
+	//m.Height = core.G.LastHeight() + 1
+	//err = m.Check()
+	//log.Println(err)
 }
 
 func TestLoadKey(t *testing.T) {

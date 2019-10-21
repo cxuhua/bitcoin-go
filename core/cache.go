@@ -3,9 +3,10 @@ package core
 import (
 	"container/list"
 	"errors"
-	"github.com/patrickmn/go-cache"
 	"sync"
 	"time"
+
+	"github.com/patrickmn/go-cache"
 )
 
 type ICacher interface {
@@ -49,16 +50,16 @@ type TxCacher interface {
 	Del(id HashID)
 	Get(id HashID) (*TX, error)
 	Set(tx *TX) (*TX, error)
-	Push(cv ICacher)
-	Pop()
+	Push(cv ...ICacher)
+	Pop(n ...int)
 }
 
 type BlockCacher interface {
 	Del(id HashID)
 	Get(id HashID) (*MsgBlock, error)
 	Set(bl *MsgBlock) (*MsgBlock, error)
-	Push(cv ICacher)
-	Pop()
+	Push(cv ...ICacher)
+	Pop(n ...int)
 }
 
 var (
@@ -97,26 +98,31 @@ func newTxs() TxCacher {
 	return v
 }
 
-func (db *txcacherdb) Push(cv ICacher) {
+func (db *txcacherdb) Push(cv ...ICacher) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	if cv == nil {
+	if len(cv) == 0 {
 		db.xs = newMemCacher()
-	} else {
-		db.xs = cv
-	}
-	db.lv.PushBack(db.xs)
-}
-
-func (db *txcacherdb) Pop() {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	//must keep one
-	if db.lv.Len() <= 1 {
+		db.lv.PushBack(db.xs)
 		return
 	}
-	db.lv.Remove(db.lv.Back())
-	db.xs = db.lv.Back().Value.(ICacher)
+	for _, v := range cv {
+		db.xs = v
+		db.lv.PushBack(db.xs)
+	}
+}
+
+func (db *txcacherdb) Pop(n ...int) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	num := 1
+	if len(n) > 0 && n[0] > 0 {
+		num = n[0]
+	}
+	for ; num > 0 && db.lv.Len() > 1; num-- {
+		db.lv.Remove(db.lv.Back())
+		db.xs = db.lv.Back().Value.(ICacher)
+	}
 }
 
 func (db *txcacherdb) Set(tx *TX) (*TX, error) {
@@ -160,26 +166,31 @@ func newBxs() BlockCacher {
 	return v
 }
 
-func (db *blockcacherdb) Push(cv ICacher) {
+func (db *blockcacherdb) Push(cv ...ICacher) {
 	db.mu.Lock()
 	defer db.mu.Unlock()
-	if cv == nil {
+	if len(cv) == 0 {
 		db.xs = newMemCacher()
-	} else {
-		db.xs = cv
-	}
-	db.lv.PushBack(db.xs)
-}
-
-func (db *blockcacherdb) Pop() {
-	db.mu.Lock()
-	defer db.mu.Unlock()
-	//must keep one
-	if db.lv.Len() <= 1 {
+		db.lv.PushBack(db.xs)
 		return
 	}
-	db.lv.Remove(db.lv.Back())
-	db.xs = db.lv.Back().Value.(ICacher)
+	for _, v := range cv {
+		db.xs = v
+		db.lv.PushBack(db.xs)
+	}
+}
+
+func (db *blockcacherdb) Pop(n ...int) {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	num := 1
+	if len(n) > 0 && n[0] > 0 {
+		num = n[0]
+	}
+	for ; num > 0 && db.lv.Len() > 1; num-- {
+		db.lv.Remove(db.lv.Back())
+		db.xs = db.lv.Back().Value.(ICacher)
+	}
 }
 
 func (db *blockcacherdb) Set(b *MsgBlock) (*MsgBlock, error) {
