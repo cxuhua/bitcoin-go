@@ -2,6 +2,9 @@ package main
 
 import (
 	"bitcoin/core"
+	"encoding/hex"
+	"github.com/syndtr/goleveldb/leveldb"
+	"github.com/syndtr/goleveldb/leveldb/util"
 	"io/ioutil"
 	"log"
 	"testing"
@@ -25,43 +28,41 @@ func TestError(t *testing.T) {
 	log.Println(err)
 }
 
+func readvarint(h *core.NetHeader) uint64 {
+	n := uint64(0)
+	for {
+		ch := h.ReadUint8()
+		n = (n << 7) | uint64(ch&0x7F)
+		if ch&0x80 != 0 {
+			n++
+		} else {
+			break
+		}
+	}
+	return n
+}
+
 func TestLoadKey(t *testing.T) {
-	db := core.DB()
-	defer db.Close()
-	if err := core.G.Init(); err != nil {
+
+	db, err := leveldb.OpenFile("/Volumes/backup/bitcoin/datadir/blocks/index", nil)
+	if err != nil {
 		panic(err)
 	}
-	eles := core.ListAddrValues("127YYnp1jvgAX3vCB22WUUsuyTYfAeSQHh")
-	for _, ele := range eles {
-		log.Println(ele.TAddrKey, ele.GetValue())
+	rang := util.BytesPrefix([]byte{0x66})
+	iter := db.NewIterator(rang, nil)
+	//i := 0
+	for iter.Next() {
+
+		log.Println(hex.EncodeToString(iter.Key()), hex.EncodeToString(iter.Value()))
+		h := core.NewNetHeader(iter.Value())
+		log.Printf("%x", readvarint(h))
+		log.Printf("%x", readvarint(h))
+		log.Printf("%x", readvarint(h))
+		log.Printf("%x", readvarint(h))
+		log.Printf("%x", readvarint(h))
+
 	}
-	//b, err := core.LoadHeightBlock(20)
-	//if err != nil {
-	//	panic(err)
-	//}
-	//if b.Height != 20 {
-	//	t.Errorf("load error")
-	//}
-	//iter := core.DB().NewIterator(nil, nil)
-	//for iter.Next() {
-	//	key := iter.Key()
-	//	if key[0] == core.TPrefixBlock {
-	//		vk := core.TBlock(iter.Value())
-	//		bk := core.TBlockKey{}
-	//		copy(bk[:], key)
-	//		log.Println(bk, vk.Height())
-	//	} else if key[0] == core.TPrefixTxId {
-	//		tk := core.TTxKey{}
-	//		copy(tk[:], key)
-	//		log.Println(tk)
-	//	} else if key[0] == core.TPrefixAddress {
-	//		v := core.TAddrValue{}
-	//		copy(v[:], iter.Value())
-	//		log.Println(core.TAddrKey(key), v)
-	//	} else if key[0] == core.TPrefixHeight {
-	//		log.Println(core.NewHashID(iter.Value()))
-	//	}
-	//}
+	db.Close()
 }
 func TestRunClient(t *testing.T) {
 	c := core.NewClient(core.ClientTypeOut, "192.168.31.198:8333")
