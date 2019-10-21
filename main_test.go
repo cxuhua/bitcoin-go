@@ -13,7 +13,7 @@ func TestError(t *testing.T) {
 	if err := core.G.Init(); err != nil {
 		panic(err)
 	}
-	data, err := ioutil.ReadFile("f:\\blocks\\000000002732d387256b57cabdcb17767e3d30e220ea73f844b1907c0b5919ea")
+	data, err := ioutil.ReadFile("f:\\blocks\\000000000000018f5ee13ecf9e9595356148c097a2fb5825169fde3f48e8eb8a")
 	if err != nil {
 		panic(err)
 	}
