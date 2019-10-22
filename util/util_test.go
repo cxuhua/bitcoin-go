@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"log"
 	"math/big"
@@ -13,6 +14,20 @@ import (
 	"github.com/spaolacci/murmur3"
 )
 
+func TestCompressAmount(t *testing.T) {
+	for i := 0; i < 100000; i++ {
+		v := uint64(0)
+		binary.Read(rand.Reader, binary.LittleEndian, &v)
+		v >>= 8
+		v1 := CompressAmount(v)
+		v2 := DecompressAmount(v1)
+		if v2 != v {
+			t.Errorf("error")
+			break
+		}
+	}
+}
+
 func TestBloomFilter(t *testing.T) {
 	seed := uint64(0xFBA4C795 + 5)
 	m := murmur3.Sum32WithSeed([]byte{0}, uint32(seed))
@@ -20,11 +35,6 @@ func TestBloomFilter(t *testing.T) {
 
 	log.Println(P2PKHAddress(HexDecode("4838a081d73cf134e8ff9cfd4015406c73beceb3")))
 }
-
-//扫描标签获取相关数据，填写上次记录hash，生成签名后提交到地址
-//服务器获取数据，校验cmac，校验用户签名，填入none和time后生成签名，数据返回给用户，用户再次校验服务器签名，计算hash，连接到自己的记录上
-//还需要校验计数器必须大于上一次记录的计数器
-//数据广播到其他节点，节点验证签名后记录
 
 // y^2 = x^3 -3x + b
 // y = sqrt(x^3 -3x + b)

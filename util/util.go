@@ -12,6 +12,48 @@ import (
 	"strings"
 )
 
+//56 bits
+func CompressAmount(n uint64) uint64 {
+	if n == 0 {
+		return 0
+	}
+	e := uint64(0)
+	for ((n % 10) == 0) && e < 9 {
+		n /= 10
+		e++
+	}
+	if e < 9 {
+		d := (n % 10)
+		n /= 10
+		return 1 + (n*9+d-1)*10 + e
+	} else {
+		return 1 + (n-1)*10 + 9
+	}
+}
+
+//56 bits
+func DecompressAmount(x uint64) uint64 {
+	if x == 0 {
+		return 0
+	}
+	x--
+	e := x % 10
+	x /= 10
+	n := uint64(0)
+	if e < 9 {
+		d := (x % 9) + 1
+		x /= 9
+		n = x*10 + d
+	} else {
+		n = x + 1
+	}
+	for e != 0 {
+		n *= 10
+		e--
+	}
+	return n
+}
+
 func SetRandInt(v interface{}) {
 	binary.Read(rand.Reader, binary.LittleEndian, v)
 }
